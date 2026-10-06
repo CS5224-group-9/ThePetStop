@@ -1,7 +1,7 @@
 name: AWS Connection Test
 
 on:
-  workflow_dispatch:   # run on demand from Actions tab
+  workflow_dispatch: # run on demand from Actions tab
 
 permissions:
   id-token: write
@@ -11,6 +11,12 @@ jobs:
   test-aws:
     runs-on: ubuntu-latest
     steps:
+      - name: Show OIDC subject
+        run: |
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          python3 -c "import sys,json,base64;p=sys.argv[1].split('.')[1];p+='='*(-len(p)%4);print(json.loads(base64.urlsafe_b64decode(p))['sub'])" "$TOKEN"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
