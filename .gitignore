@@ -6,3 +6,9 @@
 
 # OS files
 .DS_Store
+
+# Django files to ignore
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+backend/db.sqlite3
