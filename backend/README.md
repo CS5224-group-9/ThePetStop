@@ -68,7 +68,7 @@ Keep the backend running in one terminal and run the frontend separately:
 
 ```powershell
 cd ..\frontend
-npm run dev
+yarn dev
 ```
 
 The frontend will be available at <http://localhost:3000/>.
