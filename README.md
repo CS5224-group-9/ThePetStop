@@ -30,6 +30,8 @@ yarn install
 yarn dev
 ```
 
+If `yarn` is not installed, run `corepack enable` once (Corepack ships with Node.js). It provides the Yarn version pinned in `frontend/package.json`.
+
 The backend serves <http://127.0.0.1:8000/> and the frontend <http://localhost:3000/>.
 
 ## Code style
