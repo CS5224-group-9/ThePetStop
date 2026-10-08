@@ -31,3 +31,23 @@ yarn dev
 ```
 
 The backend serves <http://127.0.0.1:8000/> and the frontend <http://localhost:3000/>.
+
+## Code style
+
+Formatting is automatic: Prettier for the frontend, Ruff for the backend. The `Lint and Format` workflow checks both on every pull request.
+
+Before pushing, from `frontend/`:
+
+```powershell
+yarn format
+yarn lint
+```
+
+And from `backend/`:
+
+```powershell
+uv run ruff format
+uv run ruff check --fix
+```
+
+In VS Code, install the recommended extensions when prompted and files are formatted on save. Line endings are LF on every OS, set in `.gitattributes` and `.editorconfig`.

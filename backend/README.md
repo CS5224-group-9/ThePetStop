@@ -114,6 +114,13 @@ Run tests:
 uv run python .\manage.py test
 ```
 
+Format and lint with Ruff:
+
+```powershell
+uv run ruff format
+uv run ruff check --fix
+```
+
 ## Adding dependencies
 
 Add a dependency with `uv` rather than installing it manually with `pip`:

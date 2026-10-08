@@ -1,0 +1,11 @@
+# Build output
+.next/
+out/
+build/
+
+# Generated files
+next-env.d.ts
+yarn.lock
+
+# Contains a block rewritten by `next dev`
+AGENTS.md

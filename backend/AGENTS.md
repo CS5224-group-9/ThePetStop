@@ -44,6 +44,10 @@ uv run python .\manage.py check
 uv run python .\manage.py migrate
 uv run python .\manage.py test
 uv run python .\manage.py runserver
+uv run ruff format
+uv run ruff check --fix
 ```
+
+Ruff formats and lints the backend; its rules are in `pyproject.toml`. Run both Ruff commands before finishing, since CI runs `ruff format --check` and `ruff check`.
 
 Use `README.md` for the fuller setup guide. If a command cannot run in the current environment, report that limitation and the check that was attempted.

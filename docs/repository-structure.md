@@ -7,19 +7,23 @@ A draft target layout for the prototype, derived from the three features in [pro
 ```text
 cs5224-petstop/
 ├── .github/workflows/
-│   └── aws-test.yml        # Manual AWS OIDC connection check
-├── backend/                # Django API (uv)
+│   ├── aws-test.yml        # Manual AWS OIDC connection check
+│   └── lint.yml            # Format and lint checks for both projects
+├── .vscode/                # Shared format-on-save settings and extensions
+├── backend/                # Django API (uv, Ruff)
 │   ├── api/                # Empty app: models, views, tests are stubs
 │   ├── config/             # Settings, URLs, ASGI, WSGI
 │   ├── manage.py
 │   ├── pyproject.toml
 │   └── uv.lock
-├── frontend/               # Next.js app (Yarn)
+├── frontend/               # Next.js app (Yarn, Prettier, ESLint)
 │   ├── app/                # layout.tsx, page.tsx, globals.css
 │   ├── public/
 │   ├── package.json
 │   └── yarn.lock
 ├── docs/                   # Context files (this directory)
+├── .editorconfig
+├── .gitattributes          # LF line endings
 ├── AGENTS.md
 ├── CLAUDE.md
 └── README.md
@@ -31,6 +35,7 @@ cs5224-petstop/
 cs5224-petstop/
 ├── .github/workflows/
 │   ├── aws-test.yml
+│   ├── lint.yml
 │   ├── backend-ci.yml      # uv sync, manage.py check, manage.py test
 │   ├── frontend-ci.yml     # yarn lint, yarn build, frontend tests
 │   └── deploy.yml          # Deployment through the OIDC role

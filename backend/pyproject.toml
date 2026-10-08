@@ -8,3 +8,14 @@ dependencies = [
     "djangorestframework>=3.18.1",
     "python-dotenv>=1.2.4",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.10",
+]
+
+[tool.ruff.lint]
+# pycodestyle, Pyflakes, import sorting, pyupgrade, bugbear, Django
+select = ["E", "F", "I", "UP", "B", "DJ"]
+# Line length is handled by the formatter.
+ignore = ["E501"]
