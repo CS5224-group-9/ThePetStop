@@ -12,3 +12,6 @@
 **/__pycache__/
 **/*.py[cod]
 backend/db.sqlite3
+
+# AI Files to ignore
+CLAUDE.local.md
