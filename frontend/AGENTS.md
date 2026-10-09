@@ -31,4 +31,6 @@ These instructions apply to files under `frontend/`. Keep them outside the gener
 
 ## Working locally
 
-From `frontend/`: `yarn install`, `yarn dev`, `yarn lint`, `yarn build`.
+From `frontend/`: `yarn install`, `yarn dev`, `yarn format`, `yarn lint`, `yarn build`.
+
+Prettier owns formatting, including Tailwind class order; ESLint covers code problems only. Run `yarn format` before finishing, since CI runs `yarn format:check`. This file is in `.prettierignore` because of the generated block above.

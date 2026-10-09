@@ -46,7 +46,7 @@ The diagram also states a collaboration rule: each feature domain owns its servi
 | File storage | None. |
 | External data | None. No AVS import, no OneMap calls. |
 | Infrastructure as code | None. |
-| CI | `.github/workflows/aws-test.yml` only. It runs on manual dispatch, assumes an AWS role through GitHub OIDC, and prints the caller identity. Nothing runs lint, build, or tests. |
+| CI | `.github/workflows/lint.yml` checks formatting and lint (Prettier and ESLint for the frontend, Ruff for the backend) on pull requests and pushes to `main`. `.github/workflows/aws-test.yml` runs on manual dispatch, assumes an AWS role through GitHub OIDC, and prints the caller identity. Nothing runs build or tests. |
 
 Backend settings that are incomplete in `backend/config/settings.py`:
 
