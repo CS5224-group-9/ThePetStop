@@ -10,6 +10,8 @@ ThePetStop is a proposed pet service web app for Singaporean pet owners. The pre
 - A map and directory of pet shops and veterinary clinics, with location search and filtering.
 - A marketplace where users can browse products, add them to a cart, and complete a simulated purchase.
 
+Fuller context is in `../docs/`: `product-context.md` for scope, `architecture.md` for the proposed design, known gaps in `config/settings.py`, and open decisions, and `repository-structure.md` for the draft app layout and API routes.
+
 Treat the report as product context, not evidence that a feature or integration already exists. Its AWS architecture (Cognito, Lambda, API Gateway, RDS, S3, CloudFront), AVS registry sync, OneMap geocoding, PayNow payments, advertising, commissions, invoices, and reconciliation are proposals or future work unless the repository implements them. The prototype explicitly excludes real advertising and commission collection. Do not add real payments or claim a service is integrated without a specific task and working configuration.
 
 ## Current backend
