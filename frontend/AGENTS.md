@@ -33,4 +33,6 @@ These instructions apply to files under `frontend/`. Keep them outside the gener
 
 ## Working locally
 
-From `frontend/`: `yarn install`, `yarn dev`, `yarn lint`, `yarn build`.
+From `frontend/`: `yarn install`, `yarn dev`, `yarn lint`, `yarn format`, `yarn build`.
+
+Linting is ESLint (`eslint.config.mjs`, with `eslint-config-prettier` last) and formatting is Prettier with the Tailwind class-sorting plugin (`.prettierrc.json`). CI runs `yarn lint` and `yarn format:check`. Yarn is version 1 (`packageManager` in `package.json`); use `--frozen-lockfile`, not `--immutable`.

@@ -114,6 +114,27 @@ Run tests:
 uv run python .\manage.py test
 ```
 
+## Lint and format
+
+[Ruff](https://docs.astral.sh/ruff/) is the linter and formatter. Its settings are in `pyproject.toml`, and migrations are excluded. CI runs these checks on every pull request, so run them before you push:
+
+```powershell
+uv run ruff check .
+uv run ruff format --check .
+uv run python .\manage.py check
+```
+
+Fix what Ruff can fix automatically, and reformat the code:
+
+```powershell
+uv run ruff check --fix .
+uv run ruff format .
+```
+
+Fix the remaining findings by hand rather than silencing them with `# noqa`.
+
+From the repository root, add `--directory backend`, for example `uv --directory backend run ruff check .`.
+
 ## Adding dependencies
 
 Add a dependency with `uv` rather than installing it manually with `pip`:

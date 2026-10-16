@@ -2,7 +2,7 @@
 
 The target AWS architecture for the MVP, what is built today, and the decisions still open. Scope is in [product-context.md](product-context.md); file layout and API routes are in [repository-structure.md](repository-structure.md).
 
-Last updated 2026-10-15. Re-check the code before trusting the "Current state" section.
+Last updated 2026-10-16. Re-check the code before trusting the "Current state" section.
 
 ## Stack
 
@@ -104,7 +104,7 @@ Checked 2026-10-15 on `main`.
 | Auth | Django's default session auth only. No Cognito integration and no DRF settings. |
 | Files, external data | None. |
 | Infrastructure as code | None. |
-| CI | `.github/workflows/aws-test.yml`: a manually triggered OIDC check that prints the AWS caller identity. Nothing runs lint, build or tests. |
+| CI | `backend-ci.yml` (Ruff lint and format check, `manage.py check`) and `frontend-ci.yml` (ESLint, Prettier check) on every pull request and push to `main`. `aws-test.yml`: a manually triggered OIDC check that prints the AWS caller identity. Nothing runs builds or tests yet. |
 
 Backend settings to fix in `backend/config/settings.py` before feature work:
 

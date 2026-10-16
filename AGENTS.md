@@ -27,7 +27,7 @@ Read the one that matches the task; they are not loaded automatically.
 - `frontend/` is the Next.js app. Follow `frontend/AGENTS.md` for its version-specific rules. Its dependency manager is Yarn (`yarn.lock`).
 - `backend/` is the Django API. Follow `backend/AGENTS.md` for its domain, security, and development rules. Its dependency manager is uv (`pyproject.toml` and `uv.lock`).
 - `docs/` holds the context files listed above. Update them when a decision is made or the implemented state changes.
-- `.github/workflows/` contains repository automation. Check which project a workflow actually covers before changing commands or assuming a CI check exists. At present the only workflow is a manually triggered AWS connection check; no workflow runs lint, build, or tests.
+- `.github/workflows/` contains repository automation. Check which project a workflow actually covers before changing commands or assuming a CI check exists. At present `backend-ci.yml` and `frontend-ci.yml` run linters and format checks on every pull request and push to `main`, and `aws-test.yml` is a manually triggered AWS connection check. No workflow runs builds or tests yet.
 
 ## Sources versus repository
 
@@ -49,6 +49,6 @@ Open decisions are listed in `docs/architecture.md`. Raise one with the user ins
 
 ## Useful commands
 
-From `frontend/`: `yarn install`, `yarn lint`, `yarn build`, `yarn dev`.
+From `frontend/`: `yarn install`, `yarn lint`, `yarn format` (or `yarn format:check`), `yarn build`, `yarn dev`.
 
-From `backend/`: `uv sync`, `uv run python manage.py check`, `uv run python manage.py test`, `uv run python manage.py runserver`.
+From `backend/`: `uv sync`, `uv run ruff check .`, `uv run ruff format .`, `uv run python manage.py check`, `uv run python manage.py test`, `uv run python manage.py runserver`.
