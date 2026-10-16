@@ -1,108 +1,140 @@
-# Architecture: proposed and current
+# Architecture
 
-The preliminary report proposes an AWS architecture. This repository does not implement it yet. This file records both, and the decisions still open between them.
+The target AWS architecture for the MVP, what is built today, and the decisions still open. Scope is in [product-context.md](product-context.md); file layout and API routes are in [repository-structure.md](repository-structure.md).
 
-Current state was checked on 2026-10-07. Re-check the code before relying on the "current" columns.
+Last updated 2026-10-15. Re-check the code before trusting the "Current state" section.
 
-## Proposed architecture (from the report)
+## Stack
 
-Region: AWS Asia Pacific (Singapore), `ap-southeast-1`.
+| Layer | Choice |
+| --- | --- |
+| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, Yarn; statically exported |
+| Map | MapLibre GL JS with OneMap tiles |
+| Backend | One Django 6.1 project with Django REST Framework, managed with uv |
+| Database | PostgreSQL 16: Amazon RDS in AWS, Docker Compose locally, a service container in CI |
+| Auth | Amazon Cognito user pool, groups `owner` and `merchant` |
+| Files | Amazon S3 with presigned URLs |
+| Infrastructure as code | AWS CDK in TypeScript |
+| CI/CD | GitHub Actions, deploying to AWS through the existing OIDC role |
+| Region | `ap-southeast-1` (Singapore) |
 
-| Layer | Component | Proposed AWS service |
-| --- | --- | --- |
-| User channel | Pet owner web frontend | Amazon CloudFront |
-| Shared access | Domain routing and edge protection | Amazon Route 53 |
-| Shared access | API management and feature routing | Amazon API Gateway |
-| Shared access | Identity and access management | Amazon Cognito |
-| Pet profiles | Profile service and access rules | AWS Lambda |
-| Pet profiles | Profile and file metadata | Amazon RDS for PostgreSQL |
-| Pet profiles | Private photos and vet reports | Amazon S3, short-lived presigned URLs |
-| Map and directory | Map and Directory Service | AWS Lambda |
-| Map and directory | Facility database | Amazon RDS for PostgreSQL (the diagram adds PostGIS) |
-| Map and directory | AVS Data Synchronisation Service | AWS Lambda on a schedule (the diagram shows EventBridge) |
-| Map and directory | Geocoding | OneMap API |
-| Map and directory | Map rendering in the browser | MapLibre |
-| Marketplace | Checkout and Payment Service | AWS Lambda, PayNow API |
-| Marketplace | Order, Ledger and Invoicing Service | AWS Lambda, Amazon RDS for PostgreSQL, invoices in S3 |
-| Marketplace | Ad Placement Service | AWS Lambda, Amazon RDS |
-| Marketplace | Reconciliation Job | Scheduled AWS Lambda, settlement reports in S3 |
-| Platform | Monitoring and auditing | Amazon CloudWatch, AWS CloudTrail |
-| Platform | Secrets | AWS Secrets Manager |
-| Platform | Container management | Amazon ECR, Amazon ECS |
-| Platform | Deployment | GitHub Actions |
+### Relation to the MVP Development Plan
 
-The diagram labels are small in the source PDF; rows marked "the diagram" were read from it and should be confirmed against the original figure.
+The plan matches this stack and the decisions below (updated 2026-10-16). It lists only model names and defers to [data-model.md](data-model.md) for fields, and API routes are drafted in the [API contract](repository-structure.md#api-contract) rather than as hand-written OpenAPI stubs. If the plan and this file disagree again, record the difference here.
 
-The diagram also states a collaboration rule: each feature domain owns its services, storage, and data, with no direct database access across domains.
+## AWS architecture
 
-## Current implementation
+```text
+Browser
+  │
+  ├── CloudFront ── S3 "web"              Next.js static export
+  │       └────── S3 "product-images"     public catalogue images
+  │
+  └── API Gateway (HTTP API) ── Cognito JWT authorizer on protected routes
+          │
+          └── Lambda "api"  (Django container image + Lambda Web Adapter, in VPC)
+                 ├── RDS PostgreSQL       private subnets
+                 ├── Secrets Manager      DB credentials, Django secret key
+                 └── S3 "pet-files"       private: pet photos, vet reports (presigned URLs)
+
+EventBridge Scheduler, weekly (facility sync, Sprint 2)
+  └── Lambda "fetch" (same image, outside the VPC) → AVS + OneMap → JSON in S3 "sync"
+        └── S3 event on the new JSON
+              └── Lambda "jobs" (same image, in the VPC) → manage.py load_facilities → RDS
+
+CloudWatch Logs + dashboard + alarms · CloudTrail · AWS Budgets · RDS automated backups
+```
+
+### How the brief's cloud requirements are met
+
+| Requirement | Implementation |
+| --- | --- |
+| Secure authentication and access controls | Cognito sign-up and sign-in. API Gateway rejects missing or invalid tokens on protected routes. Django maps the token's `sub` to a local user, filters every private query by owner, and checks `merchant` group membership for merchant routes. |
+| Managed database | One RDS PostgreSQL instance (`db.t4g.micro`, single-AZ). Each Django app owns its own tables. |
+| Object storage for product images | S3 `product-images`, served through CloudFront. Pet photos and vet reports live in a separate private bucket. |
+| Serverless APIs | API Gateway HTTP API and Lambda. There are no always-on servers. |
+| Monitoring | CloudWatch metrics for Lambda and RDS, a dashboard, email alarms on errors and throttles, and CloudTrail for the account. |
+| Logging | Structured JSON logs from Django to CloudWatch Logs, with 14-day retention. No pet medical data or presigned URLs in logs. |
+| Backups | RDS automated backups (7 days), a manual snapshot before the demo, and S3 versioning on `pet-files`. One restore is tested in Sprint 2. |
+
+### Django on Lambda
+
+- The backend is packaged as one container image in Amazon ECR. The **AWS Lambda Web Adapter** runs gunicorn inside Lambda, so Django runs unchanged.
+- Migrations and the facility sync use the same image with a different command, invoked as a deploy step, by EventBridge Scheduler (fetch) or by an S3 event (load).
+- Requests are capped at about 6 MB, so files upload **directly to S3** through presigned PUT URLs and never pass through Django.
+- The first request after an idle period is slow while Django starts. Expect this in load-test results; use provisioned concurrency only if checkout latency becomes a problem.
+- Concurrent Lambdas each open a database connection. Use `CONN_MAX_AGE`, cap reserved concurrency, and add RDS Proxy only if load tests show connection exhaustion.
+
+### Authentication flow
+
+1. The frontend signs users up and in against Cognito (Amplify Auth or an equivalent library) and keeps the ID or access token.
+2. The API client sends `Authorization: Bearer <token>`.
+3. API Gateway's JWT authorizer validates the token on protected routes. Public routes, such as browsing facilities and products, have no authorizer.
+4. Django validates the token again with Cognito's public keys, which are passed to it as configuration at deploy time because the Lambda has no internet access. It creates or updates the local `accounts.User` keyed by `sub`, and reads `cognito:groups` for the merchant role.
+5. Local development uses the same flow against the dev user pool. Tests use a test-only authentication class.
+
+Requests for another user's pet, record, file, reminder or order return **404**, not 403, so the response does not reveal that the record exists.
+
+### Facility data
+
+The sync runs in two steps, because the Lambda that can reach RDS has no internet access (see the outbound-access decision under [Decisions](#decisions)):
+
+1. `manage.py fetch_facilities` runs **outside the VPC**. It downloads the AVS registries of licensed pet shops and veterinary centres, parses and validates them, and geocodes each address through OneMap, by postal code first. It writes the result as JSON, to S3 in AWS or to a file locally.
+2. `manage.py load_facilities` runs **inside the VPC**. It reads that JSON, through the free S3 gateway endpoint, and upserts `Facility` rows. Each row stores the source, licence number and `last_checked_at`; facilities missing from the registry are marked inactive.
+
+Sprint 1 runs both steps once by hand. From Sprint 2, EventBridge Scheduler runs the fetch weekly, and an S3 event on the new JSON in `sync` starts the load, so the load never runs before the file exists. Geocoding failures go into a report for manual fixing; they are never silently dropped.
+
+A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so local development, tests and a first deploy work without calling AVS or OneMap. If the AVS format turns out awkward, this snapshot is the fallback and the weekly sync becomes a stretch goal.
+
+### Reminders
+
+- Reminders are in-app only. No email, SMS or push notifications are sent, so there is no SES and no scheduled job.
+- `GET /reminders/` returns the user's reminders ordered by due date, with overdue and due-soon flags computed when the request is made.
+- The dashboard shows upcoming and overdue reminders; each pet's page shows that pet's.
+
+## Current state
+
+Checked 2026-10-15 on `main`.
 
 | Area | What exists |
 | --- | --- |
-| Frontend | Next.js 16 with React 19, TypeScript, and Tailwind CSS 4 in `frontend/`. Only the default `create-next-app` page. No API client, map library, or test runner installed. |
-| Backend | Django 6.1 with Django REST Framework in `backend/`. One app, `api`, with empty models, views, and tests. The only URL is `admin/`. |
-| Database | SQLite (`backend/db.sqlite3`, ignored by Git). |
-| Authentication | Django's default session auth apps are installed. No Cognito, no token auth, no DRF configuration. |
-| File storage | None. |
-| External data | None. No AVS import, no OneMap calls. |
+| Frontend | The default `create-next-app` page. No API client, auth, map library or test runner. |
+| Backend | Django project `config/` and one empty app `api/`. The only URL is `admin/`. |
+| Database | SQLite (`backend/db.sqlite3`, ignored by Git), until `docker-compose.yml` and the PostgreSQL settings land. |
+| Auth | Django's default session auth only. No Cognito integration and no DRF settings. |
+| Files, external data | None. |
 | Infrastructure as code | None. |
-| CI | `.github/workflows/aws-test.yml` only. It runs on manual dispatch, assumes an AWS role through GitHub OIDC, and prints the caller identity. Nothing runs lint, build, or tests. |
+| CI | `.github/workflows/aws-test.yml`: a manually triggered OIDC check that prints the AWS caller identity. Nothing runs lint, build or tests. |
 
-Backend settings that are incomplete in `backend/config/settings.py`:
+Backend settings to fix in `backend/config/settings.py` before feature work:
 
-- `corsheaders` is in `INSTALLED_APPS`, but `CorsMiddleware` is not in `MIDDLEWARE` and no allowed origins are set, so cross-origin requests from the frontend are not yet permitted.
-- There is no `REST_FRAMEWORK` setting, so no default authentication or permission classes are declared.
-- `python-dotenv` is a dependency but `load_dotenv()` is never called. `SECRET_KEY` is hardcoded and `DEBUG` is `True`.
-- `ALLOWED_HOSTS` is empty and `TIME_ZONE` is `UTC` (the product is Singapore-only).
+- `SECRET_KEY` is hardcoded and the repository is public. Treat that key as leaked: read a new one from the environment.
+- `DEBUG = True` and `ALLOWED_HOSTS = []` are hardcoded. Read both from the environment.
+- `python-dotenv` is installed but `load_dotenv()` is never called.
+- `corsheaders` is installed, but `CorsMiddleware` is not in `MIDDLEWARE` and no allowed origins are set.
+- There is no `REST_FRAMEWORK` setting: no default authentication, permission, pagination or exception handler.
+- `TIME_ZONE` is `UTC`. Use `Asia/Singapore`; Django still stores UTC.
+- There is no custom user model. Add `accounts.User` **before the first real migration**, because changing `AUTH_USER_MODEL` later is very hard.
 
-## Differences between the report and the repository
+## Decisions
 
-| Topic | Report | Repository | Effect |
-| --- | --- | --- | --- |
-| Backend compute | One AWS Lambda service per domain | A single Django project | Decided: keep the single Django project, with one app per domain, hosted as one Lambda function. See backend structure and hosting. |
-| Frontend | "React frontend" served by CloudFront | Next.js | Whether the app is statically exported or needs a Node server changes how it is hosted. |
-| Tests | Jest for frontend and backend | Django's test runner on the backend; no frontend runner | Backend tests are Django tests. Jest (or another runner) still has to be added to the frontend. |
-| Database | PostgreSQL, with PostGIS for facilities | SQLite | Radius search must work on SQLite locally or the team moves local development to PostgreSQL. |
-| Payment | PayNow API in the design | Nothing | Prototype payment is simulated. |
+### Made
 
-## Backend structure and hosting
+| Decision | Choice | Reason |
+| --- | --- | --- |
+| Backend shape | One Django project, one app per domain, one Lambda function | Every endpoint is a short request with state in the database. One deployable keeps it simple for a six-person team. |
+| Database | RDS PostgreSQL `db.t4g.micro` | Django's ORM, migrations and admin need a relational database, and the data is relational. DynamoDB was rejected. |
+| Auth | Cognito with `owner` and `merchant` groups | Named in the report and the plan. It is managed and has a free tier. |
+| Payments | Simulated: a "Pay" step marks the order paid | MVP brief |
+| Reminder channels | In-app only | The brief asks only for reminders. Email (in the MVP plan) and SMS are out of scope. |
+| Containers | No ECS. ECR only stores the Lambda image. | MVP plan |
+| Frontend hosting (2026-10-15) | Static export (`output: 'export'`) to S3 `web` behind CloudFront | Cheapest and simplest; matches the report. All data comes from the Django API, so no Next.js server features are needed. Consequences: no request-time server rendering, no API routes, server actions or middleware, and pages for one record take a query parameter (`/pets/detail?id=…`). Set `trailingSlash: true` and `images.unoptimized: true`, and add a CloudFront Function that maps a clean URL such as `/pets/detail/` to `/pets/detail/index.html`, because S3 behind CloudFront OAC does not serve sub-folder index files on its own. |
+| Facility radius search (2026-10-15) | Plain `latitude` and `longitude` columns: a bounding-box prefilter, then exact (haversine) distance in SQL. No PostGIS. | Singapore has only a few hundred licensed facilities. Avoids GeoDjango's GDAL and GEOS libraries on Windows laptops and in the Lambda image. Differs from the plan. |
+| Outbound access from the VPC (2026-10-15) | No NAT gateway. S3 gateway endpoint (free); Secrets Manager interface endpoint in one AZ (roughly US$10 a month; confirm in the AWS Pricing Calculator); Cognito public keys passed to Django at deploy time; facility sync split into a fetch step outside the VPC and a load step inside it (see [Facility data](#facility-data)) | A NAT gateway costs about US$45 a month plus data charges in Singapore. This keeps the weekly sync without one. |
+| CDK language (2026-10-15) | TypeScript, in `infra/` with its own `package.json` and Yarn lockfile | Most CDK examples and constructs are TypeScript-first. Only workstream A writes infrastructure code. |
+| Local database (2026-10-16) | PostgreSQL 16 in Docker Compose (`docker-compose.yml` at the repo root, `postgres:16` image, a named volume for data). Django reads `DATABASE_URL` from `backend/.env` through `dj-database-url` and `psycopg`. CI uses the same image as a service container. | Local, CI and RDS run the same engine and version, so checkout transactions and row locks behave alike. Each member has a private database filled from committed fixtures and seed commands, never a shared one. Fallback for a laptop where Docker Desktop will not run: a native PostgreSQL 16 install with the same `DATABASE_URL`. If port 5432 is taken, map the container to 5433. |
+| Catalogue access (2026-10-15) | Public: facility search and details, categories, merchants and products need no login. Everything else (pets, reminders, cart, checkout, orders, the merchant portal) requires a token. | Users can explore before signing up; smoother usability testing and load tests. |
 
-Decided on 2026-10-07:
+### Open
 
-- **Structure.** The backend stays a single Django project. The report's three feature domains become Django apps inside it instead of separate Lambda services.
-- **Hosting.** The whole project is packaged as one container image and runs as a single AWS Lambda function behind Amazon API Gateway, through a web adapter. All three domains share that function. This keeps the report's Lambda and API Gateway design and the Lambda CloudWatch metrics named in the evaluation.
-
-- **Database.** A small Amazon RDS for PostgreSQL instance (`db.t4g.micro` class) for the prototype, shared by all three apps. Aurora Serverless v2 with auto-pause is the production path if the database needs to scale with usage. DynamoDB was considered and rejected: Django's ORM, migrations, admin, and user model need a relational database, and the data is relational.
-
-Per-domain hosting was considered and rejected: every prototype endpoint, including cart and simulated checkout, is a short request that keeps its state in the database, so none needs an always-on server. If cold starts at checkout become a problem, use provisioned concurrency on the same function.
-
-Consequences to plan for:
-
-- A Lambda function inside a VPC has no internet access without a NAT gateway. Code that calls OneMap or other outside services has to account for this.
-- Requests are limited to about 6 MB, so photos and veterinary reports upload directly to S3 through presigned URLs.
-- The first request after an idle period is slow while Django loads. Expect this in load-test results.
-- Migrations run as a deploy step, by invoking the same image with a different command.
-
-The file layout and the rules for what each app may import are in [repository-structure.md](repository-structure.md).
-
-How the report's services map onto the Django apps:
-
-| Report service | Location |
-| --- | --- |
-| Pet Profile Service and access rules | `pets/views.py`, `api/permissions.py` |
-| Secure pet file access (presigned URLs) | `pets/storage.py` |
-| Map and Directory Service | `facilities/views.py`, `facilities/search.py` |
-| AVS Data Synchronisation Service | `facilities/management/commands/sync_facilities.py` |
-| Checkout and Payment Service | `marketplace/checkout.py`, simulated |
-| Order, Ledger and Invoicing Service | `Order` and `OrderItem` only; ledger and invoices are out of scope |
-| Ad Placement Service, Reconciliation Job | Not built; out of prototype scope |
-| Identity and access management | `accounts/` |
-
-## Open decisions
-
-These need a team decision. Do not settle them inside an unrelated change.
-
-1. **Authentication.** Cognito is proposed. If adopted, Django verifies Cognito-issued JWTs and maps them to local users; otherwise Django issues its own sessions or tokens. Ownership checks on pet data are required either way.
-2. **Frontend hosting.** Static export to S3 and CloudFront, or a Node-hosted Next.js server.
-3. **Facility search.** PostGIS queries, or a plain latitude and longitude bounding box with distance computed in Python or SQL. The second works on SQLite and is adequate for the few thousand facilities in Singapore.
-4. **AVS data sync trigger.** The sync is a Django management command. Whether it runs on a schedule in AWS or is run manually for the prototype is open.
+None. Add new open decisions here, each with a recommendation, and move them to "Made" once the team settles them.

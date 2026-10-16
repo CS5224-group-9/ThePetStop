@@ -1,69 +1,108 @@
 # Product context
 
-Summary of the Group 9 preliminary report (CS5224). The report itself is not checked into this repository. It states prototype goals and a proposed design; see [architecture.md](architecture.md) for what is actually built.
+What the MVP must deliver, what is deliberately left out, and what the evaluation needs from the code. Sources, in order of authority:
+
+1. The **MVP scope brief** (team project doc "Scope of MVP"). It defines the three core features and the cloud requirements.
+2. The **MVP Development Plan** (team project doc, live version at <https://claude.ai/code/artifact/d518d744-3763-4feb-bba7-50de560b0b85>). It sets milestones, workstreams and scope cuts.
+3. The **Group 9 preliminary report**. It gives the business case and the evaluation plan. Where it describes more than the brief (PayNow, ads, booking, SMS), the brief wins.
+
+Neither source is checked into the repository. For what is actually built, read the code and [architecture.md](architecture.md).
+
+Last updated 2026-10-15.
 
 ## What ThePetStop is
 
-An integrated web app (SaaS on AWS) for pet owners in Singapore, covering multiple pet species. It combines three things that existing local services only offer separately: a pet health record, a map of pet facilities, and a marketplace.
+A web app hosted on AWS for pet owners in Singapore, covering multiple species. It combines three things local apps only offer separately: a digital pet record, a verified map of pet facilities, and a multi-merchant marketplace for pet supplies.
 
 Users:
 
-- Pet owners in Singapore (primary users; the platform is free for them).
-- Pet-related businesses such as pet shops and clinics (the paying side in the long-term business model).
+- **Pet owners** (primary users; free for them).
+- **Merchants**: staff of participating pet shops who manage their catalogue and orders.
 
-## Prototype scope
+## MVP scope
 
-The prototype demonstrates core user value in three features.
+### Feature 1: Verified facility discovery
 
-### 1. Pet profiles
+Purpose: help owners find relevant, trustworthy pet facilities.
 
-- Authenticated users create, view, and update multiple pet profiles.
-- Each profile holds name, species, breed, and a profile photo.
-- Vaccination information is recorded per pet (the "digital pet passport"). Singapore requires owners to keep microchip and vaccination records.
-- Users upload private veterinary reports and attach them to the correct pet.
-- Owners can access only their own pets. Photos and reports are private files.
+- Interactive Singapore map and a searchable directory.
+- Filters for veterinary centres and pet shops.
+- Facility details: name, address, phone, email or website, licence number.
+- Navigation: a "Get directions" link from the user's location (Google Maps or OneMap).
+- **Verification source and last-checked date** on every facility.
+- Data comes from the AVS public registries of licensed pet shops and veterinary centres, geocoded through the OneMap API.
+- Never present stale or made-up facility data as official registry data.
 
-### 2. Facility map and directory
+### Feature 2: Pet profiles
 
-- Users find AVS-licensed pet shops and veterinary clinics near a location.
-- The frontend sends location, search radius, and category; the backend returns nearby active facilities.
-- Each facility shows name, address, contact information, facility type, and AVS licence status.
-- Results appear as map markers and as a directory list.
-- Facility data comes from the AVS public registries, geocoded from address to latitude and longitude through the OneMap API.
+Purpose: one place for an owner's important pet information.
 
-### 3. Marketplace
+- Multiple pets per user.
+- Basic profile: name, species, breed, sex, date of birth, microchip number, photo.
+- Allergies and dietary preferences.
+- Vaccination records and care records: deworming, grooming, check-ups.
+- Private vet reports (PDF or image) attached to a pet.
+- **Reminders for upcoming care tasks**, shown in the app: on the dashboard and on each pet's page, with overdue ones highlighted. A vaccination's "next due" date suggests a reminder.
+- Owners see only their own pets, records, files and reminders.
 
-- Users browse pet products stored in a database, add them to a cart, and complete a **simulated** payment.
-- No real money moves in the prototype.
+### Feature 3: Multi-merchant marketplace
 
-## Outside the prototype
+Purpose: discover and compare pet supplies across participating retailers, and buy from several merchants in one checkout.
 
-The report describes these as long-term plans or does not carry them into the prototype scope. Do not build them without a specific task.
+- Product catalogues from participating shops.
+- Search, category filters and **price comparison**: where several shops sell the same product, show each shop's price.
+- One cart holding items from several merchants, grouped by merchant.
+- Checkout from our site with **simulated payment**: no real money moves. One order is split into one sub-order per merchant.
+- Order history in one place, with per-merchant status.
+- Basic merchant management: merchants edit their products, prices, stock and images, and move their sub-orders through Processing → Shipped → Delivered.
 
-| Item | Status in the report |
+Seed data, required by the brief: **6 fictional shops**, each with **20–30 products**, across **6 categories**. Shops overlap on enough products for price comparison to be visible. See [data-model.md](data-model.md#seed-catalogue).
+
+Nice-to-have, only if milestone M2 is met on time: list pet services, such as grooming or a health screening, in the marketplace and buy them through the same checkout. This is a listing only, with no booking calendar.
+
+### Cloud requirements (from the brief)
+
+- Secure user authentication and access controls.
+- Managed database for pet profiles, facilities, products and orders.
+- Object storage for product images.
+- Serverless APIs, monitoring, logging and backups.
+
+How each is met is in [architecture.md](architecture.md).
+
+## Out of scope
+
+Do not build these without an explicit team decision. Log ideas as future work for the final report.
+
+| Item | Why it is out |
 | --- | --- |
-| Advertising (sponsored map and directory listings) | Explicitly not in the prototype |
-| Commission collection (5–10% per transaction) and seller payouts | Explicitly not in the prototype |
-| Real PayNow payments, payment tokenisation | Described in the architecture; the prototype uses simulated payment |
-| Ledger, refunds, GST-compliant PDF invoices | Described in the architecture; not listed in the prototype scope |
-| Reconciliation job against settlement reports | Described in the architecture; not listed in the prototype scope |
-| In-app booking of veterinary and grooming services | Mentioned in the motivation only |
-| SMS and email notifications for appointments | Mentioned in the motivation only |
-| Pet parks and pet-friendly venues on the map | Mentioned in the motivation; the feature section covers AVS-licensed pet shops and clinics only |
+| Real payments (PayNow), tokenisation, refunds | The brief asks for a simulated checkout |
+| Ledger, commission split, seller payouts, GST invoices, reconciliation | Revenue features; the report keeps them out of the prototype |
+| Advertising and sponsored listings | Revenue feature; out of the prototype |
+| Appointment booking for vets or groomers | Not in the brief |
+| Email, SMS and push notifications | Not in the brief; reminders are shown in the app only |
+| Pet parks and pet-friendly venues on the map | The brief covers vets and pet shops only |
+| Merchant self-signup and onboarding | Merchant accounts are created by the team for the six seeded shops |
 
-## What the evaluation plan requires of the code
+## What the evaluation needs from the code
 
-The report commits to these checks, so the prototype has to support them.
+The report commits to four evaluation streams, so the code has to support them.
 
-- **Usability tasks** that must work end to end: create a pet profile and add vaccination information; find and filter a nearby facility; find a product and add it to the cart; complete a simulated purchase.
-- **Security checks** (run with Postman): a protected endpoint rejects a request without a valid login token; a logged-in user cannot view another user's pet profile.
-- **Functional tests**: unit tests on critical frontend components and backend functions, and integration tests across frontend, backend, and database, focused on pet profiles, facility search, and the marketplace.
-- **Load test**: k6 simulating concurrent users against the backend API, recording response times and error rates.
-- **Monitoring**: Amazon CloudWatch metrics for the deployed compute and database.
-- **Cost comparison** (final report): the AWS deployment against an equivalent on-premises setup.
+- **User requirements survey** with local pet owners. This has no code impact.
+- **Usability testing.** These four tasks must work end to end on the deployed site:
+  1. Create a pet profile and add a vaccination record.
+  2. Find and filter a nearby facility.
+  3. Find a product in the marketplace and add it to the cart.
+  4. Complete a simulated purchase.
+- **Functional and integration testing.**
+  - Unit tests on critical backend logic (Django test runner) and frontend components (Jest).
+  - Integration tests across frontend, API and database for pets, facility search and the marketplace.
+- **Cloud performance and security testing.**
+  - A k6 load test against the API, with response times and error rates, read alongside CloudWatch metrics (Lambda duration, errors, throttles, concurrency; RDS CPU, memory, connections).
+  - A Postman collection that shows:
+    - a protected endpoint rejects a request with no valid token;
+    - user A cannot read user B's pet or order.
+- **Cost comparison** for the final report: AWS actual costs against an equivalent on-premises setup.
 
-## Points the report leaves unclear
+## Timeline
 
-- The motivation promises booking and notifications, but neither appears in the feature descriptions or the prototype scope.
-- The marketplace architecture describes PayNow payments, "tokenised card data", ledgers, and invoices, while the business section says payment is simulated. Simulated payment is the prototype behaviour.
-- The report says the scope of the final version is subject to change. Confirm scope with the team before starting anything in the table above.
+Submission is **Wed 11 Nov 2026**. Milestones and owners are in [roadmap.md](roadmap.md).

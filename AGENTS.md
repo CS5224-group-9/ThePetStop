@@ -4,21 +4,23 @@ These instructions apply across this repository. For work inside a project direc
 
 ## Product
 
-ThePetStop is a CS5224 group project: a web app for pet owners in Singapore, planned for deployment on AWS. The prototype has three features:
+ThePetStop is a CS5224 group project: a web app for pet owners in Singapore, deployed on AWS. The MVP, due Wed 11 Nov 2026, has three features:
 
-1. **Pet profiles**: pet details, vaccination information, and private veterinary documents, visible only to the owner.
-2. **Facility map and directory**: AVS-licensed pet shops and veterinary clinics, searched by location, radius, and category.
-3. **Marketplace**: browse products, add to cart, and complete a simulated payment.
+1. **Verified facility discovery**: a map and searchable directory of AVS-licensed vets and pet shops, with filters, details, directions, and the verification source and last-checked date.
+2. **Pet profiles**: multiple pets per user; allergies and diet; vaccination and care records; private vet reports; in-app reminders. Each owner sees only their own pets.
+3. **Multi-merchant marketplace**: six fictional shops; search, filters and price comparison; one cart and checkout across merchants with simulated payment; order history; basic merchant management.
 
-Advertising, commission collection, real payments, invoicing, reconciliation, service booking, and notifications are not part of the prototype. Do not build them without a specific task.
+Real payments, ledgers and invoices, commission, advertising, booking, email and SMS notifications, and pet parks are out of scope. Do not build them without a team decision. The full list is in `docs/product-context.md`.
 
 ## Context files
 
 Read the one that matches the task; they are not loaded automatically.
 
-- `docs/product-context.md`: what the preliminary report asks for, what is out of scope, and what the evaluation plan requires of the code.
-- `docs/architecture.md`: the proposed AWS architecture, what is implemented today, and the open decisions between the two.
-- `docs/repository-structure.md`: current layout, draft target layout, draft API routes, and suggested order of work.
+- `docs/product-context.md`: MVP scope, what is out of scope, and what the evaluation needs from the code.
+- `docs/architecture.md`: the AWS architecture, the current state of the code, and decisions made and still open.
+- `docs/data-model.md`: draft Django models, checkout rules, and the seed catalogue format.
+- `docs/repository-structure.md`: target layout, app boundaries, and the API contract.
+- `docs/roadmap.md`: milestones, workstream owners, and what must happen before Sprint 1.
 
 ## Project layout
 
@@ -27,16 +29,16 @@ Read the one that matches the task; they are not loaded automatically.
 - `docs/` holds the context files listed above. Update them when a decision is made or the implemented state changes.
 - `.github/workflows/` contains repository automation. Check which project a workflow actually covers before changing commands or assuming a CI check exists. At present the only workflow is a manually triggered AWS connection check; no workflow runs lint, build, or tests.
 
-## Report versus repository
+## Sources versus repository
 
-The preliminary report describes prototype goals and a proposed architecture; it is not a record of deployed integrations. Check the current implementation before treating a feature as complete. Where the two disagree, the repository is what exists:
+The preliminary report, the MVP scope brief, and the MVP Development Plan describe goals and a proposed design; they are not a record of what is built. Check the code before treating a feature as complete. Where they disagree with the repository, the repository wins:
 
-- The report proposes one AWS Lambda service per feature. The backend is a single Django project, to be deployed as one Lambda function.
-- The report says "React frontend". The frontend is Next.js.
-- The report names Jest for frontend and backend tests. Backend tests use Django's test runner; the frontend has no test runner yet.
-- The report proposes PostgreSQL, Cognito, S3, OneMap, and MapLibre. None is configured or installed.
+- The report proposes one Lambda service per domain. The backend is a single Django project, deployed as one Lambda function; the plan agrees.
+- The report says "React frontend". The frontend is Next.js; the plan agrees.
+- The report names Jest for all tests. Backend tests use Django's test runner; Jest is for the frontend only.
+- PostgreSQL, Cognito, S3, OneMap, and MapLibre are planned but not yet configured or installed.
 
-Authentication, frontend hosting, and several other choices are still open. They are listed in `docs/architecture.md`. Raise an open decision with the user instead of settling it inside an unrelated change.
+Open decisions are listed in `docs/architecture.md`. Raise one with the user instead of settling it inside an unrelated change.
 
 ## Shared workflow
 
