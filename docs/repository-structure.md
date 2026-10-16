@@ -14,7 +14,8 @@ cs5224-petstop/
 │   │   ├── backend-ci.yml     # Ruff lint and format check, manage.py check
 │   │   └── frontend-ci.yml    # ESLint, Prettier check
 │   └── pull_request_template.md
-├── backend/                # Django API (uv); one empty app, api/
+├── backend/                # Django API (uv); api, accounts, and empty feature apps
+├── docker-compose.yml      # Local PostgreSQL 16
 ├── frontend/               # Next.js app (Yarn); default create-next-app page
 ├── docs/                   # Context files (this directory)
 ├── AGENTS.md

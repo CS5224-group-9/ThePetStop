@@ -94,27 +94,24 @@ A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so loc
 
 ## Current state
 
-Checked 2026-10-15 on `main`.
+Checked 2026-10-16.
 
 | Area | What exists |
 | --- | --- |
 | Frontend | The default `create-next-app` page. No API client, auth, map library or test runner. |
-| Backend | Django project `config/` and one empty app `api/`. The only URL is `admin/`. |
-| Database | SQLite (`backend/db.sqlite3`, ignored by Git), until `docker-compose.yml` and the PostgreSQL settings land. |
-| Auth | Django's default session auth only. No Cognito integration and no DRF settings. |
+| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally). Apps: `api` (shared error format and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`), and empty `pets`, `facilities` and `marketplace`. Django tests cover `/me/` and `/health/`. |
+| Database | PostgreSQL 16 in Docker Compose (`docker-compose.yml` at the repo root), read through `DATABASE_URL`. `accounts.User` is the user model from the first migration. |
+| Auth | DRF session auth, so the admin login works with the browsable API. Views require a login by default. No Cognito integration yet, so a missing login returns 403 instead of the contract's 401. |
 | Files, external data | None. |
 | Infrastructure as code | None. |
 | CI | `backend-ci.yml` (Ruff lint and format check, `manage.py check`) and `frontend-ci.yml` (ESLint, Prettier check) on every pull request and push to `main`. `aws-test.yml`: a manually triggered OIDC check that prints the AWS caller identity. Nothing runs builds or tests yet. |
 
-Backend settings to fix in `backend/config/settings.py` before feature work:
+Backend settings in `backend/config/settings.py`:
 
-- `SECRET_KEY` is hardcoded and the repository is public. Treat that key as leaked: read a new one from the environment.
-- `DEBUG = True` and `ALLOWED_HOSTS = []` are hardcoded. Read both from the environment.
-- `python-dotenv` is installed but `load_dotenv()` is never called.
-- `corsheaders` is installed, but `CorsMiddleware` is not in `MIDDLEWARE` and no allowed origins are set.
-- There is no `REST_FRAMEWORK` setting: no default authentication, permission, pagination or exception handler.
-- `TIME_ZONE` is `UTC`. Use `Asia/Singapore`; Django still stores UTC.
-- There is no custom user model. Add `accounts.User` **before the first real migration**, because changing `AUTH_USER_MODEL` later is very hard.
+- `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` and the database come from environment variables; `backend/.env.example` lists them. The key once committed to the public repository is no longer used. Every environment generates its own.
+- `REST_FRAMEWORK` sets session authentication, `IsAuthenticated` as the default permission, page-number pagination (20 per page) and the error handler in `api/exceptions.py`.
+- `TIME_ZONE` is `Asia/Singapore`; Django still stores UTC.
+- Still to do: the Cognito authentication class (`api/authentication.py`), which also turns the 403 for a missing login into 401.
 
 ## Decisions
 

@@ -21,9 +21,11 @@ Treat the report and plan as product context, not evidence that a feature or int
 
 ## Current backend
 
-- Django project: `config/`; Django app: `api/`.
-- API framework: Django REST Framework. `django-cors-headers` and `python-dotenv` are dependencies; confirm their settings and usage before relying on them.
-- Local database: SQLite (`db.sqlite3`) today. The team has decided to move local development to PostgreSQL 16 in Docker Compose, read through `DATABASE_URL` (see `../docs/architecture.md`). Write code and queries that work on PostgreSQL, and do not add SQLite-only behaviour.
+- Django project: `config/`. Apps: `api` (shared error format, `/health/`), `accounts` (`User`, `/me/`), and the feature apps `pets`, `facilities` and `marketplace`. All routes are under `/api/v1/`.
+- API framework: Django REST Framework. Views require a login by default; public views set `AllowAny`. Raise DRF exceptions (or an `APIException` subclass with a `default_code`) so errors use the shared shape in `api/exceptions.py`.
+- Settings come from environment variables, loaded from `backend/.env` with `load_dotenv()`; `.env.example` lists them.
+- Local database: PostgreSQL 16 in Docker Compose (`../docker-compose.yml`), read through `DATABASE_URL`. Write code and queries that work on PostgreSQL.
+- Users: `accounts.User` is `AUTH_USER_MODEL`. Reference it through `settings.AUTH_USER_MODEL` or `get_user_model()`.
 - Dependency management: `uv`, `pyproject.toml`, and `uv.lock`. Use `uv add`/`uv remove` for dependency changes and commit both metadata files. Do not use `pip freeze` as the source of truth.
 - Target Python version is specified in `pyproject.toml`; check it rather than assuming a version.
 
