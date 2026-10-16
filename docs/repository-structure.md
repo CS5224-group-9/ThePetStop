@@ -2,14 +2,18 @@
 
 The current layout, the target layout for the MVP, the API contract, and the rules that keep the domains separate. Create a directory when its first real file goes in, not before.
 
-Last updated 2026-10-15.
+Last updated 2026-10-16.
 
 ## Current structure
 
 ```text
 cs5224-petstop/
-├── .github/workflows/
-│   └── aws-test.yml        # Manual AWS OIDC connection check
+├── .github/
+│   ├── workflows/
+│   │   ├── aws-test.yml       # Manual AWS OIDC connection check
+│   │   ├── backend-ci.yml     # Ruff lint and format check, manage.py check
+│   │   └── frontend-ci.yml    # ESLint, Prettier check
+│   └── pull_request_template.md
 ├── backend/                # Django API (uv); one empty app, api/
 ├── frontend/               # Next.js app (Yarn); default create-next-app page
 ├── docs/                   # Context files (this directory)
@@ -25,8 +29,8 @@ cs5224-petstop/
 ├── .github/
 │   ├── workflows/
 │   │   ├── aws-test.yml
-│   │   ├── backend-ci.yml     # uv sync --locked, check, makemigrations --check, test
-│   │   ├── frontend-ci.yml    # yarn install --immutable, lint, test, build
+│   │   ├── backend-ci.yml     # uv sync --locked, ruff, check, makemigrations --check, test
+│   │   ├── frontend-ci.yml    # yarn install --frozen-lockfile, lint, format:check, test, build
 │   │   └── deploy.yml         # On merge to main: image → ECR, migrate, Lambda, web → S3, CloudFront invalidation
 │   └── pull_request_template.md
 ├── backend/

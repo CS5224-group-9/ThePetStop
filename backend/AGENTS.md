@@ -45,10 +45,14 @@ From `backend/` in PowerShell:
 
 ```powershell
 uv sync
+uv run ruff check .
+uv run ruff format .
 uv run python .\manage.py check
 uv run python .\manage.py migrate
 uv run python .\manage.py test
 uv run python .\manage.py runserver
 ```
+
+Ruff is the linter and formatter, configured in `pyproject.toml`; migrations are excluded. CI runs `ruff check`, `ruff format --check` and `manage.py check`. Fix lint findings rather than adding `noqa`; the one `noqa` on `SECRET_KEY` goes when the key moves to the environment.
 
 Use `README.md` for the fuller setup guide. If a command cannot run in the current environment, report that limitation and the check that was attempted.
