@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Frontend agent guidance
 
-These instructions apply to files under `frontend/`. Keep them outside the generated block above. Product scope and the draft route layout are in `../docs/product-context.md` and `../docs/repository-structure.md`.
+These instructions apply to files under `frontend/`. Keep them outside the generated block above. Product scope is in `../docs/product-context.md`; the route layout and API contract are in `../docs/repository-structure.md`.
 
 ## Current frontend
 
@@ -20,12 +20,14 @@ These instructions apply to files under `frontend/`. Keep them outside the gener
 
 ## Implementation guidelines
 
-- Build only the requested slice of the prototype: pet profiles, the facility map and directory, or the marketplace with simulated checkout.
+- Build only the requested slice of the MVP: facility map and directory, pet profiles and reminders, or the marketplace (catalogue, cart, simulated checkout, orders, merchant portal).
 - Call the Django API through one shared client module instead of scattering `fetch` calls. Read the API base URL from an environment variable; do not hardcode `127.0.0.1:8000`.
 - Match the backend's URLs, payloads, authentication, and error format. When a task changes a contract, change both sides.
 - The backend enforces ownership of pet data. The frontend must still handle `401`, `403`, and `404` responses, and must not cache one user's pet records where another user could see them.
 - Veterinary documents and pet photos are private. Do not place their URLs in query strings, logs, or analytics.
 - The report names MapLibre for the map and Jest for tests. Neither is installed; add one only when a task needs it.
+- The app is statically exported (`output: 'export'`) to S3 and CloudFront. Do not use features that need a Next.js server: no API routes, no server actions, no request-time data fetching in server components, no middleware (proxy), rewrites, redirects or custom headers in `next.config`. Keep `trailingSlash: true` and `images.unoptimized: true`. Pages for one record take the id as a query parameter, such as `/pets/detail?id=…`.
+- Facility and product browsing is public; pets, reminders, cart, checkout, orders and the merchant portal require sign-in.
 - Label simulated checkout as simulated. Never show wording that implies a real charge.
 - Show AVS licence status as returned by the backend. Do not present mock or stale facility data as official registry data.
 

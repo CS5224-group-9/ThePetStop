@@ -1,7 +1,7 @@
 # ThePetStop Backend
 
 The backend is a Django project that exposes APIs for the Next.js frontend.
-Dependencies are managed with [uv](https://docs.astral.sh/uv/), and the local development database is SQLite.
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). The local database is SQLite for now; the team has decided to move to PostgreSQL 16 in Docker Compose (see [../docs/architecture.md](../docs/architecture.md#decisions)), and these steps change when that lands.
 
 ## Requirements
 
@@ -132,7 +132,7 @@ This updates `pyproject.toml` and `uv.lock`. Commit both files after changing de
 
 ## Environment variables
 
-Do not commit secrets or production credentials. Store local secrets in `backend/.env` and add this file to `.gitignore`.
+Do not commit secrets or production credentials. Store local secrets in `backend/.env`, which the root `.gitignore` already ignores.
 
 The project includes `python-dotenv` as a dependency. When environment variables are added to Django settings, load them explicitly with `load_dotenv()` before reading values from `os.environ`.
 
@@ -143,4 +143,4 @@ DJANGO_DEBUG=True
 DJANGO_SECRET_KEY=replace-this-for-local-development
 ```
 
-The current development settings use Django's generated secret key and `DEBUG = True`; these must be moved to environment variables before deployment.
+The current settings hardcode `SECRET_KEY`, `DEBUG = True` and `ALLOWED_HOSTS`. The repository is public, so treat that key as leaked: the backend foundation work moves all three to environment variables (see [../docs/architecture.md](../docs/architecture.md#current-state)).

@@ -3,6 +3,7 @@
 
 # Environment files
 **/.env*
+!**/.env.example
 
 # OS files
 .DS_Store
