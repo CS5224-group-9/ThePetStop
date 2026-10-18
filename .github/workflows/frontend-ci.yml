@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  lint:
+  checks:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -32,3 +32,9 @@ jobs:
 
       - name: Prettier
         run: yarn format:check
+
+      - name: Frontend contract tests
+        run: yarn test
+
+      - name: Static production build
+        run: yarn build
