@@ -1,8 +1,12 @@
 # Repository structure
 
+## Standalone frontend UI
+
+The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six fictional merchant catalogues, facility search with an offline schematic map, care records/reminders, browser-persisted cart and simulated orders, plus merchant editing. No API or Cognito setup is needed to explore these flows. Local data is a single browser workspace for sample information; document files remain in tab memory until reload. Listings are fictional and unverified. Set `NEXT_PUBLIC_DATA_SOURCE=api` to opt into the previously implemented API/Cognito boundary described below; backend endpoints remain a separate task. Local mode does not replace API authorization or implement AWS services.
+
 The current layout, the target layout for the MVP, the API contract, and the rules that keep the domains separate. Create a directory when its first real file goes in, not before.
 
-Last updated 2026-10-16.
+Last updated 2026-10-18.
 
 ## Current structure
 
@@ -12,10 +16,10 @@ cs5224-petstop/
 │   ├── workflows/
 │   │   ├── aws-test.yml       # Manual AWS OIDC connection check
 │   │   ├── backend-ci.yml     # Ruff lint and format check, manage.py check
-│   │   └── frontend-ci.yml    # ESLint, Prettier check
+│   │   └── frontend-ci.yml    # ESLint, Prettier, tests and static build
 │   └── pull_request_template.md
 ├── backend/                # Django API (uv); one empty app, api/
-├── frontend/               # Next.js app (Yarn); default create-next-app page
+├── frontend/               # Next.js app (Yarn); standalone UI with optional API mode
 ├── docs/                   # Context files (this directory)
 ├── AGENTS.md
 ├── CLAUDE.md
@@ -115,6 +119,8 @@ frontend/
 ```
 
 The API base URL comes from `NEXT_PUBLIC_API_BASE_URL`. Nothing else calls `fetch` against the API directly.
+
+The frontend implements the listed routes plus `/auth/callback/` and `/pets/reminders/`. Cognito sign-in uses `oidc-client-ts`; MapLibre renders OneMap tiles. `lib/api/` owns requests, adapters and domain operations; `lib/auth/` owns OAuth session handling. Local mode uses fictional sample data and browser storage; API mode uses the configured backend. The feature backend/schema is not implemented yet, so the frontend wire contract is explicitly provisional: see [frontend-integration.md](frontend-integration.md). `tests/api.test.mts` checks the HTTP/contract boundary and `tests/local-ui.test.mts` checks local interactions. Frontend CI now includes those checks and a static build.
 
 ## API contract
 
