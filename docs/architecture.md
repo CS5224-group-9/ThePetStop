@@ -1,14 +1,18 @@
 # Architecture
 
+## Standalone frontend UI
+
+The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six fictional merchant catalogues, facility search with an offline schematic map, care records/reminders, browser-persisted cart and simulated orders, plus merchant editing. No API or Cognito setup is needed to explore these flows. Local data is a single browser workspace for sample information; document files remain in tab memory until reload. Listings are fictional and unverified. Set `NEXT_PUBLIC_DATA_SOURCE=api` to opt into the previously implemented API/Cognito boundary described below; backend endpoints remain a separate task. Local mode does not replace API authorization or implement AWS services.
+
 The target AWS architecture for the MVP, what is built today, and the decisions still open. Scope is in [product-context.md](product-context.md); file layout and API routes are in [repository-structure.md](repository-structure.md).
 
-Last updated 2026-10-16. Re-check the code before trusting the "Current state" section.
+Last updated 2026-10-19. Re-check the code before trusting the "Current state" section.
 
 ## Stack
 
 | Layer | Choice |
 | --- | --- |
-| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, Yarn; statically exported |
+| Frontend | Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4 and Yarn; statically exported; configurable Cognito OIDC sign-in |
 | Map | MapLibre GL JS with OneMap tiles |
 | Backend | One Django 6.1 project with Django REST Framework, managed with uv |
 | Database | PostgreSQL 16: Amazon RDS in AWS, Docker Compose locally, a service container in CI |
@@ -94,17 +98,17 @@ A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so loc
 
 ## Current state
 
-Checked 2026-10-16.
+Checked 2026-10-19 against the working tree.
 
 | Area | What exists |
 | --- | --- |
-| Frontend | The default `create-next-app` page. No API client, auth, map library or test runner. |
+| Frontend | Static-export frontend that defaults to local sample data, browser-persisted profiles/reminders/cart/orders, a schematic facility map and merchant editing. Explicit API mode retains configurable Cognito OIDC/PKCE, pet/document/cart/order operations and MapLibre/OneMap. Backend feature endpoints and actual AWS configuration remain unimplemented here; see `docs/frontend-integration.md` for the proposed wire contract and deployment boundary. |
 | Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally). Apps: `api` (shared error format and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`), and empty `pets`, `facilities` and `marketplace`. Django tests cover `/me/` and `/health/`. |
 | Database | PostgreSQL 16 in Docker Compose (`docker-compose.yml` at the repo root), read through `DATABASE_URL`. `accounts.User` is the user model from the first migration. |
 | Auth | DRF session auth, so the admin login works with the browsable API. Views require a login by default. No Cognito integration yet, so a missing login returns 403 instead of the contract's 401. |
 | Files, external data | None. |
 | Infrastructure as code | None. |
-| CI | `backend-ci.yml` (Ruff lint and format check, `manage.py check`) and `frontend-ci.yml` (ESLint, Prettier check) on every pull request and push to `main`. `aws-test.yml`: a manually triggered OIDC check that prints the AWS caller identity. Nothing runs builds or tests yet. |
+| CI | Backend lint/format and Django check; frontend lint/format, API and local behavior tests and static build on PRs and pushes to main. `aws-test.yml` remains a manual AWS caller-identity check. |
 
 Backend settings in `backend/config/settings.py`:
 
