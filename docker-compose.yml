@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: petstop
+      POSTGRES_USER: petstop
+      POSTGRES_PASSWORD: petstop # local only
+    ports:
+      - "5432:5432" # use "5433:5432" if 5432 is taken
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U petstop"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:

@@ -6,7 +6,7 @@ The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six f
 
 The target AWS architecture for the MVP, what is built today, and the decisions still open. Scope is in [product-context.md](product-context.md); file layout and API routes are in [repository-structure.md](repository-structure.md).
 
-Last updated 2026-10-16. Re-check the code before trusting the "Current state" section.
+Last updated 2026-10-19. Re-check the code before trusting the "Current state" section.
 
 ## Stack
 
@@ -98,27 +98,24 @@ A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so loc
 
 ## Current state
 
-Updated 2026-10-19 in the working tree; backend state below remains unchanged.
+Checked 2026-10-19 against the working tree.
 
 | Area | What exists |
 | --- | --- |
 | Frontend | Static-export frontend that defaults to local sample data, browser-persisted profiles/reminders/cart/orders, a schematic facility map and merchant editing. Explicit API mode retains configurable Cognito OIDC/PKCE, pet/document/cart/order operations and MapLibre/OneMap. Backend feature endpoints and actual AWS configuration remain unimplemented here; see `docs/frontend-integration.md` for the proposed wire contract and deployment boundary. |
-| Backend | Django project `config/` and one empty app `api/`. The only URL is `admin/`. |
-| Database | SQLite (`backend/db.sqlite3`, ignored by Git), until `docker-compose.yml` and the PostgreSQL settings land. |
-| Auth | Django's default session auth only. No Cognito integration and no DRF settings. |
+| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally). Apps: `api` (shared error format and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`), and empty `pets`, `facilities` and `marketplace`. Django tests cover `/me/` and `/health/`. |
+| Database | PostgreSQL 16 in Docker Compose (`docker-compose.yml` at the repo root), read through `DATABASE_URL`. `accounts.User` is the user model from the first migration. |
+| Auth | DRF session auth, so the admin login works with the browsable API. Views require a login by default. No Cognito integration yet, so a missing login returns 403 instead of the contract's 401. |
 | Files, external data | None. |
 | Infrastructure as code | None. |
 | CI | Backend lint/format and Django check; frontend lint/format, API and local behavior tests and static build on PRs and pushes to main. `aws-test.yml` remains a manual AWS caller-identity check. |
 
-Backend settings to fix in `backend/config/settings.py` before feature work:
+Backend settings in `backend/config/settings.py`:
 
-- `SECRET_KEY` is hardcoded and the repository is public. Treat that key as leaked: read a new one from the environment.
-- `DEBUG = True` and `ALLOWED_HOSTS = []` are hardcoded. Read both from the environment.
-- `python-dotenv` is installed but `load_dotenv()` is never called.
-- `corsheaders` is installed, but `CorsMiddleware` is not in `MIDDLEWARE` and no allowed origins are set.
-- There is no `REST_FRAMEWORK` setting: no default authentication, permission, pagination or exception handler.
-- `TIME_ZONE` is `UTC`. Use `Asia/Singapore`; Django still stores UTC.
-- There is no custom user model. Add `accounts.User` **before the first real migration**, because changing `AUTH_USER_MODEL` later is very hard.
+- `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` and the database come from environment variables; `backend/.env.example` lists them. The key once committed to the public repository is no longer used. Every environment generates its own.
+- `REST_FRAMEWORK` sets session authentication, `IsAuthenticated` as the default permission, page-number pagination (20 per page) and the error handler in `api/exceptions.py`.
+- `TIME_ZONE` is `Asia/Singapore`; Django still stores UTC.
+- Still to do: the Cognito authentication class (`api/authentication.py`), which also turns the 403 for a missing login into 401.
 
 ## Decisions
 

@@ -6,7 +6,7 @@ The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six f
 
 The current layout, the target layout for the MVP, the API contract, and the rules that keep the domains separate. Create a directory when its first real file goes in, not before.
 
-Last updated 2026-10-18.
+Last updated 2026-10-19.
 
 ## Current structure
 
@@ -18,7 +18,8 @@ cs5224-petstop/
 │   │   ├── backend-ci.yml     # Ruff lint and format check, manage.py check
 │   │   └── frontend-ci.yml    # ESLint, Prettier, tests and static build
 │   └── pull_request_template.md
-├── backend/                # Django API (uv); one empty app, api/
+├── backend/                # Django API (uv); api, accounts, and empty feature apps
+├── docker-compose.yml      # Local PostgreSQL 16
 ├── frontend/               # Next.js app (Yarn); standalone UI with optional API mode
 ├── docs/                   # Context files (this directory)
 ├── AGENTS.md

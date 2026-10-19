@@ -11,6 +11,10 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      DJANGO_SECRET_KEY: ci-only-not-a-secret
+      # check doesn't connect; add credentials with a Postgres service for tests
+      DATABASE_URL: postgres://localhost:5432/petstop
     defaults:
       run:
         working-directory: backend
