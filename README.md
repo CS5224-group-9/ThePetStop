@@ -2,7 +2,7 @@
 
 A web app for pet owners in Singapore, built as a CS5224 group project. The MVP covers verified discovery of AVS-licensed vets and pet shops, pet profiles with health records and reminders, and a multi-merchant marketplace with simulated checkout.
 
-The project is at the scaffolding stage: the frontend and backend are set up, but no feature is implemented yet.
+The project is at the scaffolding stage: the backend foundation (settings, PostgreSQL, user model, `/health/` and `/me/`) is in place, but no feature is implemented yet.
 
 ## Layout
 
@@ -17,7 +17,13 @@ The project is at the scaffolding stage: the frontend and backend are set up, bu
 
 ## Running locally
 
-Backend, from `backend/`:
+Database, from the repository root (needs Docker Desktop running):
+
+```powershell
+docker compose up -d
+```
+
+Backend, from `backend/`. The first time, create `.env` as described in [backend/README.md](backend/README.md#environment-variables).
 
 ```powershell
 uv sync
