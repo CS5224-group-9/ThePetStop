@@ -16,7 +16,9 @@ cs5224-petstop/
 │   ├── workflows/
 │   │   ├── aws-test.yml       # Manual AWS OIDC connection check
 │   │   ├── backend-ci.yml     # Ruff lint and format check, manage.py check
-│   │   └── frontend-ci.yml    # ESLint, Prettier, tests and static build
+│   │   ├── deploy.yml         # On push to main: cdk deploy, migrate, frontend → S3, CloudFront invalidation
+│   │   ├── frontend-ci.yml    # ESLint, Prettier, tests and static build
+│   │   └── infra-ci.yml       # Prettier, tsc and CDK template tests
 │   └── pull_request_template.md
 ├── backend/                # Django API (uv); api, accounts, and empty feature apps
 ├── docker-compose.yml      # Local PostgreSQL 16
@@ -36,7 +38,8 @@ cs5224-petstop/
 │   │   ├── aws-test.yml
 │   │   ├── backend-ci.yml     # uv sync --locked, ruff, check, makemigrations --check, test
 │   │   ├── frontend-ci.yml    # yarn install --frozen-lockfile, lint, format:check, test, build
-│   │   └── deploy.yml         # On merge to main: image → ECR, migrate, Lambda, web → S3, CloudFront invalidation
+│   │   ├── deploy.yml         # On push to main: cdk deploy (image → ECR, stacks), migrate, web → S3, CloudFront invalidation
+│   │   └── infra-ci.yml       # yarn install --frozen-lockfile, format:check, tsc, template tests
 │   └── pull_request_template.md
 ├── backend/
 ├── frontend/

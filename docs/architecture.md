@@ -64,7 +64,7 @@ CloudWatch Logs + dashboard + alarms · CloudTrail · AWS Budgets · RDS automat
 ### Django on Lambda
 
 - The backend is packaged as one container image (`backend/Dockerfile`, on the AWS Lambda Python base image) that CDK pushes to Amazon ECR. `config/lambda_handler.py` has two entry points: `api` uses **apig-wsgi** to turn API Gateway events into WSGI requests, so Django runs unchanged, and `manage` runs an allow-listed management command such as `migrate`.
-- Migrations and the facility sync use the same image with a different handler, invoked as a deploy step, by EventBridge Scheduler (fetch) or by an S3 event (load). (2026-10-21: apig-wsgi replaced the planned Lambda Web Adapter, because the adapter expects a web server in every function and makes a command-running function awkward.)
+- Migrations and the facility sync use the same image with a different handler, invoked as a deploy step, by EventBridge Scheduler (fetch) or by an S3 event (load).
 - In AWS, Django reads `DJANGO_SECRET_KEY_ARN` and `DB_SECRET_ARN` and fetches both secrets from Secrets Manager at start-up, through the VPC endpoint.
 - Requests are capped at about 6 MB, so files upload **directly to S3** through presigned PUT URLs and never pass through Django.
 - The first request after an idle period is slow while Django starts. Expect this in load-test results; use provisioned concurrency only if checkout latency becomes a problem.
@@ -109,7 +109,7 @@ Checked 2026-10-21 against the working tree.
 | Auth | `api.authentication.CognitoAuthentication` verifies Cognito access tokens (issuer, `client_id`, `token_use`, signature) and maps `sub` to `accounts.User`; session auth remains for the admin. A missing login returns 401. A pre-token-generation trigger adds `email` to access tokens. Users are not added to `owner` automatically; anyone not in `merchant` is treated as an owner. |
 | Files, external data | None. |
 | Infrastructure as code | CDK app in `infra/` with five stacks: `PetStop-Dev-Network` (VPC, endpoints, security groups), `-Data` (RDS, Django secret key), `-Storage` (S3 buckets, CloudFront), `-Auth` (Cognito) and `-Api` (Lambdas, HTTP API with JWT authorizer). The account is bootstrapped; the stacks are not deployed yet. |
-| CI | Backend lint/format and Django check; frontend lint/format, API and local behavior tests and static build on PRs and pushes to main. `aws-test.yml` remains a manual AWS caller-identity check. |
+| CI | Backend lint/format and Django check; frontend lint/format, API and local behavior tests and static build; infra Prettier, `tsc` and template tests. All run on PRs and pushes to main. `deploy.yml` deploys `main` to the dev stage: `cdk deploy`, `migrate`, a health check, then the frontend build, S3 upload and CloudFront invalidation. `aws-test.yml` remains a manual AWS caller-identity check. |
 
 Backend settings in `backend/config/settings.py`:
 
@@ -129,6 +129,7 @@ Backend settings in `backend/config/settings.py`:
 | Payments | Simulated: a "Pay" step marks the order paid | MVP brief |
 | Reminder channels | In-app only | The brief asks only for reminders. Email (in the MVP plan) and SMS are out of scope. |
 | Containers | No ECS. ECR only stores the Lambda image. | MVP plan |
+| Django on Lambda (2026-10-21) | One image with two handlers in `config/lambda_handler.py`: `api` through apig-wsgi, and `manage` for management commands | The same image serves requests and runs `migrate` inside the VPC, with no web server or extra HTTP endpoint for commands. |
 | Frontend hosting (2026-10-15) | Static export (`output: 'export'`) to S3 `web` behind CloudFront | Cheapest and simplest; matches the report. All data comes from the Django API, so no Next.js server features are needed. Consequences: no request-time server rendering, no API routes, server actions or middleware, and pages for one record take a query parameter (`/pets/detail?id=…`). Set `trailingSlash: true` and `images.unoptimized: true`, and add a CloudFront Function that maps a clean URL such as `/pets/detail/` to `/pets/detail/index.html`, because S3 behind CloudFront OAC does not serve sub-folder index files on its own. |
 | Facility radius search (2026-10-15) | Plain `latitude` and `longitude` columns: a bounding-box prefilter, then exact (haversine) distance in SQL. No PostGIS. | Singapore has only a few hundred licensed facilities. Avoids GeoDjango's GDAL and GEOS libraries on Windows laptops and in the Lambda image. Differs from the plan. |
 | Outbound access from the VPC (2026-10-15) | No NAT gateway. S3 gateway endpoint (free); Secrets Manager interface endpoint in one AZ (roughly US$10 a month; confirm in the AWS Pricing Calculator); Cognito public keys passed to Django at deploy time; facility sync split into a fetch step outside the VPC and a load step inside it (see [Facility data](#facility-data)) | A NAT gateway costs about US$45 a month plus data charges in Singapore. This keeps the weekly sync without one. |
