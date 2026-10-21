@@ -90,3 +90,35 @@ test("local checkout validates stock, splits merchants and is idempotent", async
   );
   await assert.rejects(service.checkout(shipping, "empty-cart"));
 });
+
+test("merchant can add and remove only their own products", async () => {
+  const before = (await service.merchantProducts()).length;
+  const created = await service.createProduct({
+    name: "  House-brand dental chews  ",
+    description: "Sample listing for the merchant workspace.",
+    category: "c1",
+    price_cents: 1290,
+    stock: 12,
+  });
+  assert.equal(created.merchant_id, "m0");
+  assert.equal(created.name, "House-brand dental chews");
+  assert.equal((await service.merchantProducts()).length, before + 1);
+  assert.ok(
+    (await service.catalogue()).products.some((p) => p.id === created.id),
+  );
+  await assert.rejects(
+    service.createProduct({
+      name: " ",
+      description: "",
+      category: "c1",
+      price_cents: 100,
+      stock: 1,
+    }),
+  );
+  await assert.rejects(service.deleteProduct("p-1-0-0"));
+  await service.deleteProduct(created.id);
+  assert.equal((await service.merchantProducts()).length, before);
+  assert.ok(
+    (await service.catalogue()).products.every((p) => p.id !== created.id),
+  );
+});

@@ -195,7 +195,10 @@ test("cart requests send identifiers and quantities, never client-calculated pri
     baseUrl: origin,
     getToken: async () => "token",
     fetcher: async (url, init) => {
-      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      calls.push({
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      });
       return new Response(null, { status: 204 });
     },
   });
@@ -203,15 +206,64 @@ test("cart requests send identifiers and quantities, never client-calculated pri
   await services.addCart("p1");
   await services.updateCart("p1", 2);
   await services.updateProduct("p1", 1200, 4);
+  await services.deleteProduct("p1");
   assert.deepEqual(
     calls.map((c) => c.body),
     [
       { product: "p1", quantity: 1 },
       { quantity: 2 },
       { price_cents: 1200, stock: 4 },
+      undefined,
     ],
   );
   assert.equal(calls[2].url, origin + "merchant/products/p1/");
+  assert.equal(calls[3].url, origin + "merchant/products/p1/");
+});
+test("merchant product creation posts catalogue fields without a client-owned shop id", async () => {
+  const created = {
+    id: "p-new",
+    name: "Sample kibble",
+    description: "Everyday dry food",
+    category: { id: "c1", name: "Food", slug: "food" },
+    merchant: merchant,
+    price_cents: 1500,
+    stock: 8,
+  };
+  let captured: { url: string; method?: string; body: unknown } | undefined;
+  const client = createApiClient({
+    baseUrl: origin,
+    getToken: async () => "token",
+    fetcher: async (url, init) => {
+      captured = {
+        url: String(url),
+        method: init?.method,
+        body: JSON.parse(String(init?.body)),
+      };
+      return json(created);
+    },
+  });
+  const product = await createServices(client).createProduct(
+    {
+      name: "Sample kibble",
+      description: "Everyday dry food",
+      category: "c1",
+      price_cents: 1500,
+      stock: 8,
+    },
+    [],
+    [],
+  );
+  assert.equal(captured?.url, origin + "merchant/products/");
+  assert.equal(captured?.method, "POST");
+  assert.deepEqual(captured?.body, {
+    name: "Sample kibble",
+    description: "Everyday dry food",
+    category: "c1",
+    price_cents: 1500,
+    stock: 8,
+  });
+  assert.equal(product.id, "p-new");
+  assert.equal(product.merchant_id, "m1");
 });
 test("invalid server money is rejected and order history uses the server snapshot", () => {
   assert.throws(
