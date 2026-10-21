@@ -42,13 +42,13 @@ yarn cdk bootstrap aws://<ACCOUNT_ID>/ap-southeast-1
 
 Defined in `bin/infra.ts`, one file each in `lib/`:
 
-| Stack | Contains |
-| --- | --- |
-| `PetStop-Dev-Network` | VPC with isolated subnets in two AZs and no NAT gateway; S3 gateway endpoint; Secrets Manager interface endpoint in one AZ; security groups for the app Lambdas and the database |
-| `PetStop-Dev-Data` | RDS PostgreSQL 16 `db.t4g.micro` with a generated credentials secret, 7-day backups and deletion protection; the Django secret key. Termination protection is on. |
-| `PetStop-Dev-Storage` | S3 buckets `Web`, `ProductImages` (served at `/product-images/*`) and private, versioned `PetFiles`; CloudFront with OAC and a function that maps `/x/` to `/x/index.html` |
-| `PetStop-Dev-Auth` | Cognito user pool with managed login, the public SPA client (code + PKCE), groups `owner` and `merchant`, a trigger that adds `email` to access tokens, and a deploy-time fetch of the pool's public keys |
-| `PetStop-Dev-Api` | The Django image as two Lambdas in the VPC (`ApiFunction` for requests, `ManageFunction` for migrations); HTTP API whose catch-all route requires a Cognito JWT, with public `GET` routes for health and the catalogue |
+| Stack                 | Contains                                                                                                                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PetStop-Dev-Network` | VPC with isolated subnets in two AZs and no NAT gateway; S3 gateway endpoint; Secrets Manager interface endpoint in one AZ; security groups for the app Lambdas and the database                                       |
+| `PetStop-Dev-Data`    | RDS PostgreSQL 16 `db.t4g.micro` with a generated credentials secret, 7-day backups and deletion protection; the Django secret key. Termination protection is on.                                                      |
+| `PetStop-Dev-Storage` | S3 buckets `Web`, `ProductImages` (served at `/product-images/*`) and private, versioned `PetFiles`; CloudFront with OAC and a function that maps `/x/` to `/x/index.html`                                             |
+| `PetStop-Dev-Auth`    | Cognito user pool with managed login, the public SPA client (code + PKCE), groups `owner` and `merchant`, a trigger that adds `email` to access tokens, and a deploy-time fetch of the pool's public keys              |
+| `PetStop-Dev-Api`     | The Django image as two Lambdas in the VPC (`ApiFunction` for requests, `ManageFunction` for migrations); HTTP API whose catch-all route requires a Cognito JWT, with public `GET` routes for health and the catalogue |
 
 All Lambda logs keep 14 days. Expect roughly US$25–35 a month, mostly RDS and the Secrets Manager endpoint; check the Budgets alarm after the first week.
 
@@ -59,13 +59,34 @@ From `infra/`, with `AWS_PROFILE` set:
 - `yarn install`: install dependencies.
 - `yarn build`: type-check the project.
 - `yarn test`: check the synthesized templates.
+- `yarn format` (or `yarn format:check`): format with Prettier.
 - `yarn cdk synth`: print the CloudFormation templates.
 - `yarn cdk diff`: compare with what is deployed. Run it before every deploy; a renamed construct replaces the resource.
 - `yarn cdk deploy --all`: deploy every stack. Docker Desktop must be running, because CDK builds `backend/Dockerfile`.
 
+## Deploying from GitHub
+
+`.github/workflows/deploy.yml` deploys `main` whenever a push changes `backend/`, `frontend/`, `infra/` or the workflow itself. It can also be started by hand from the Actions tab, but only on `main`. In order, it:
+
+1. runs `cdk deploy --all`, which builds and pushes the backend image;
+2. runs `migrate` through `ManageFunction`, and fails if the command raises;
+3. checks that `<ApiBaseUrl>health/` answers;
+4. builds the frontend in API mode from the stack outputs; no frontend settings are stored in GitHub;
+5. uploads it to the web bucket and invalidates CloudFront.
+
+It signs in to AWS through GitHub OIDC with the role in the `AWS_ROLE_ARN` repository secret, `github-actions-petapp-prod`. That role trusts only `refs/heads/main`. To deploy, it needs permission to assume CDK's bootstrap roles. Add this once, as an administrator:
+
+```powershell
+Set-Content cdk-assume.json '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Resource":"arn:aws:iam::<ACCOUNT_ID>:role/cdk-hnb659fds-*"}]}'
+aws iam put-role-policy --role-name github-actions-petapp-prod --policy-name cdk-bootstrap-roles --policy-document file://cdk-assume.json
+Remove-Item cdk-assume.json
+```
+
+`.github/workflows/infra-ci.yml` runs Prettier, `tsc` and the template tests on every pull request.
+
 ## Deploying by hand
 
-Until the deploy workflow exists, deploy from a laptop. From `infra/`:
+The same steps from a laptop, for a first deploy or when the workflow is broken. From `infra/`:
 
 1. Deploy, then note the outputs it prints (`ApiBaseUrl`, `ManageFunctionName`, `FrontendUrl`, `WebBucketName`, `DistributionId`, `CognitoIssuer`, `CognitoClientId`, `CognitoDomain`):
 

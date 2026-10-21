@@ -109,7 +109,7 @@ Checked 2026-10-21 against the working tree.
 | Auth | `api.authentication.CognitoAuthentication` verifies Cognito access tokens (issuer, `client_id`, `token_use`, signature) and maps `sub` to `accounts.User`; session auth remains for the admin. A missing login returns 401. A pre-token-generation trigger adds `email` to access tokens. Users are not added to `owner` automatically; anyone not in `merchant` is treated as an owner. |
 | Files, external data | None. |
 | Infrastructure as code | CDK app in `infra/` with five stacks: `PetStop-Dev-Network` (VPC, endpoints, security groups), `-Data` (RDS, Django secret key), `-Storage` (S3 buckets, CloudFront), `-Auth` (Cognito) and `-Api` (Lambdas, HTTP API with JWT authorizer). The account is bootstrapped; the stacks are not deployed yet. |
-| CI | Backend lint/format and Django check; frontend lint/format, API and local behavior tests and static build on PRs and pushes to main. `aws-test.yml` remains a manual AWS caller-identity check. |
+| CI | Backend lint/format and Django check; frontend lint/format, API and local behavior tests and static build; infra Prettier, `tsc` and template tests. All run on PRs and pushes to main. `deploy.yml` deploys `main` to the dev stage: `cdk deploy`, `migrate`, a health check, then the frontend build, S3 upload and CloudFront invalidation. `aws-test.yml` remains a manual AWS caller-identity check. |
 
 Backend settings in `backend/config/settings.py`:
 
