@@ -6,7 +6,7 @@ The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six f
 
 The target AWS architecture for the MVP, what is built today, and the decisions still open. Scope is in [product-context.md](product-context.md); file layout and API routes are in [repository-structure.md](repository-structure.md).
 
-Last updated 2026-10-19. Re-check the code before trusting the "Current state" section.
+Last updated 2026-10-21. Re-check the code before trusting the "Current state" section.
 
 ## Stack
 
@@ -36,7 +36,7 @@ Browser
   │
   └── API Gateway (HTTP API) ── Cognito JWT authorizer on protected routes
           │
-          └── Lambda "api"  (Django container image + Lambda Web Adapter, in VPC)
+          └── Lambda "api"  (Django container image + apig-wsgi, in VPC)
                  ├── RDS PostgreSQL       private subnets
                  ├── Secrets Manager      DB credentials, Django secret key
                  └── S3 "pet-files"       private: pet photos, vet reports (presigned URLs)
@@ -63,8 +63,9 @@ CloudWatch Logs + dashboard + alarms · CloudTrail · AWS Budgets · RDS automat
 
 ### Django on Lambda
 
-- The backend is packaged as one container image in Amazon ECR. The **AWS Lambda Web Adapter** runs gunicorn inside Lambda, so Django runs unchanged.
-- Migrations and the facility sync use the same image with a different command, invoked as a deploy step, by EventBridge Scheduler (fetch) or by an S3 event (load).
+- The backend is packaged as one container image (`backend/Dockerfile`, on the AWS Lambda Python base image) that CDK pushes to Amazon ECR. `config/lambda_handler.py` has two entry points: `api` uses **apig-wsgi** to turn API Gateway events into WSGI requests, so Django runs unchanged, and `manage` runs an allow-listed management command such as `migrate`.
+- Migrations and the facility sync use the same image with a different handler, invoked as a deploy step, by EventBridge Scheduler (fetch) or by an S3 event (load). (2026-10-21: apig-wsgi replaced the planned Lambda Web Adapter, because the adapter expects a web server in every function and makes a command-running function awkward.)
+- In AWS, Django reads `DJANGO_SECRET_KEY_ARN` and `DB_SECRET_ARN` and fetches both secrets from Secrets Manager at start-up, through the VPC endpoint.
 - Requests are capped at about 6 MB, so files upload **directly to S3** through presigned PUT URLs and never pass through Django.
 - The first request after an idle period is slow while Django starts. Expect this in load-test results; use provisioned concurrency only if checkout latency becomes a problem.
 - Concurrent Lambdas each open a database connection. Use `CONN_MAX_AGE`, cap reserved concurrency, and add RDS Proxy only if load tests show connection exhaustion.
@@ -98,16 +99,16 @@ A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so loc
 
 ## Current state
 
-Checked 2026-10-19 against the working tree.
+Checked 2026-10-21 against the working tree.
 
 | Area | What exists |
 | --- | --- |
 | Frontend | Static-export frontend that defaults to local sample data, browser-persisted profiles/reminders/cart/orders, a schematic facility map and merchant editing. Explicit API mode retains configurable Cognito OIDC/PKCE, pet/document/cart/order operations and MapLibre/OneMap. Backend feature endpoints and actual AWS configuration remain unimplemented here; see `docs/frontend-integration.md` for the proposed wire contract and deployment boundary. |
-| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally). Apps: `api` (shared error format and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`), and empty `pets`, `facilities` and `marketplace`. Django tests cover `/me/` and `/health/`. |
+| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally, Secrets Manager in AWS). Apps: `api` (shared error format, Cognito authentication and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`, which returns `groups` and a `merchant` that is always null for now), and empty `pets`, `facilities` and `marketplace`. `Dockerfile` and `config/lambda_handler.py` package it for Lambda. Django tests cover `/me/`, `/health/` and token validation. |
 | Database | PostgreSQL 16 in Docker Compose (`docker-compose.yml` at the repo root), read through `DATABASE_URL`. `accounts.User` is the user model from the first migration. |
-| Auth | DRF session auth, so the admin login works with the browsable API. Views require a login by default. No Cognito integration yet, so a missing login returns 403 instead of the contract's 401. |
+| Auth | `api.authentication.CognitoAuthentication` verifies Cognito access tokens (issuer, `client_id`, `token_use`, signature) and maps `sub` to `accounts.User`; session auth remains for the admin. A missing login returns 401. A pre-token-generation trigger adds `email` to access tokens. Users are not added to `owner` automatically; anyone not in `merchant` is treated as an owner. |
 | Files, external data | None. |
-| Infrastructure as code | None. |
+| Infrastructure as code | CDK app in `infra/` with five stacks: `PetStop-Dev-Network` (VPC, endpoints, security groups), `-Data` (RDS, Django secret key), `-Storage` (S3 buckets, CloudFront), `-Auth` (Cognito) and `-Api` (Lambdas, HTTP API with JWT authorizer). The account is bootstrapped; the stacks are not deployed yet. |
 | CI | Backend lint/format and Django check; frontend lint/format, API and local behavior tests and static build on PRs and pushes to main. `aws-test.yml` remains a manual AWS caller-identity check. |
 
 Backend settings in `backend/config/settings.py`:
@@ -115,7 +116,6 @@ Backend settings in `backend/config/settings.py`:
 - `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` and the database come from environment variables; `backend/.env.example` lists them. The key once committed to the public repository is no longer used. Every environment generates its own.
 - `REST_FRAMEWORK` sets session authentication, `IsAuthenticated` as the default permission, page-number pagination (20 per page) and the error handler in `api/exceptions.py`.
 - `TIME_ZONE` is `Asia/Singapore`; Django still stores UTC.
-- Still to do: the Cognito authentication class (`api/authentication.py`), which also turns the 403 for a missing login into 401.
 
 ## Decisions
 

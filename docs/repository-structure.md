@@ -78,7 +78,7 @@ backend/
 │   ├── checkout.py            # Transactional checkout and simulated payment
 │   ├── fixtures/catalogue/    # Seed data; see data-model.md
 │   └── management/commands/load_catalogue.py
-├── Dockerfile                 # Lambda image with the Lambda Web Adapter
+├── Dockerfile                 # Lambda image; handlers in config/lambda_handler.py
 ├── .env.example
 ├── manage.py
 ├── pyproject.toml
