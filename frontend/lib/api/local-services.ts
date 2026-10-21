@@ -469,6 +469,42 @@ export const localServices: ReturnType<typeof createServices> = {
         })),
     );
   },
+  async createProduct(input) {
+    const name = input.name.trim();
+    if (!name) throw new Error("Enter a product name.");
+    if (
+      !Number.isSafeInteger(input.price_cents) ||
+      input.price_cents < 0 ||
+      !Number.isSafeInteger(input.stock) ||
+      input.stock < 0
+    )
+      throw new Error("Enter a valid price and stock quantity.");
+    let product!: Product;
+    write((s) => {
+      const category = required(
+        s.categories.find((c) => c.id === input.category),
+      );
+      const merchant = required(s.merchants.find((m) => m.id === "m0"));
+      product = {
+        id: uid(),
+        name,
+        category: category.name,
+        category_id: category.id,
+        species: "All pets",
+        size: "Standard",
+        description: input.description.trim(),
+        color: "sage",
+        price_cents: input.price_cents,
+        stock: input.stock,
+        merchant: merchant.name,
+        merchant_id: merchant.id,
+        image_url: null,
+        offers: [],
+      };
+      s.products.push(product);
+    });
+    return copy(product);
+  },
   async updateProduct(id, price_cents, stock) {
     if (
       !Number.isSafeInteger(price_cents) ||
@@ -482,6 +518,13 @@ export const localServices: ReturnType<typeof createServices> = {
         s.products.find((p) => p.id === id && p.merchant_id === "m0"),
       );
       Object.assign(p, { price_cents, stock });
+    });
+  },
+  async deleteProduct(id) {
+    write((s) => {
+      required(s.products.find((p) => p.id === id && p.merchant_id === "m0"));
+      s.products = s.products.filter((p) => p.id !== id);
+      s.cart = s.cart.filter((i) => i.product_id !== id);
     });
   },
   async updateMerchantOrder(id, status) {

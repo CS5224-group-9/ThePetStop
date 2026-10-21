@@ -30,6 +30,13 @@ export type NewPetInput = {
   allergies: string[];
   diet_notes: string;
 };
+export type NewProductInput = {
+  name: string;
+  description: string;
+  category: string;
+  price_cents: number;
+  stock: number;
+};
 export type Reminder = {
   id: string;
   pet_id: string;
