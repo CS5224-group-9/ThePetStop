@@ -9,12 +9,13 @@ export function Merchant() {
   const [tab, setTab] = useState("Catalogue");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const creating = pending.includes("product:create");
   return (
     <>
       <PageHeading
         eyebrow="MERCHANT WORKSPACE"
         title={state.profile?.merchant?.name || "Merchant dashboard"}
-        description="Manage your shop’s prices, stock and order fulfilment."
+        description="Add, edit or remove your shop’s products, then update prices, stock and order fulfilment."
       />
       <div className="tabs">
         {["Catalogue", "Orders"].map((t) => (
@@ -43,11 +44,105 @@ export function Merchant() {
               />
             </label>
           </div>
+          <form
+            className="merchant-create"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (creating) return;
+              const form = e.currentTarget;
+              const d = new FormData(form);
+              setError("");
+              try {
+                await actions.createProduct({
+                  name: String(d.get("name")).trim(),
+                  description: String(d.get("description")).trim(),
+                  category: String(d.get("category")),
+                  price_cents: Math.round(Number(d.get("price")) * 100),
+                  stock: Number(d.get("stock")),
+                });
+                form.reset();
+              } catch (cause) {
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : "Unable to add this product.",
+                );
+              }
+            }}
+          >
+            <h3>Add a product</h3>
+            <div className="form-grid">
+              <label>
+                Name
+                <input
+                  name="name"
+                  required
+                  maxLength={120}
+                  autoComplete="off"
+                  disabled={creating}
+                />
+              </label>
+              <label>
+                Category
+                <select name="category" required disabled={creating}>
+                  {state.categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Price (SGD)
+                <input
+                  name="price"
+                  type="number"
+                  min="0.01"
+                  max="10000"
+                  step="0.01"
+                  required
+                  disabled={creating}
+                />
+              </label>
+              <label>
+                Stock
+                <input
+                  name="stock"
+                  type="number"
+                  min="0"
+                  max="9999"
+                  step="1"
+                  defaultValue={0}
+                  required
+                  disabled={creating}
+                />
+              </label>
+              <label className="merchant-create-description">
+                Description
+                <input
+                  name="description"
+                  maxLength={500}
+                  autoComplete="off"
+                  disabled={creating}
+                />
+              </label>
+            </div>
+            <div className="form-footer">
+              <button
+                className="button"
+                type="submit"
+                disabled={creating || !state.categories.length}
+              >
+                {creating ? "Adding…" : "Add product"}
+              </button>
+            </div>
+          </form>
           <div className="merchant-table">
             <div className="merchant-table-head">
               <span>PRODUCT</span>
               <span>PRICE (SGD)</span>
               <span>STOCK</span>
+              <span />
               <span />
             </div>
             {state.merchant_products
@@ -112,12 +207,36 @@ export function Merchant() {
                   >
                     {pending.includes(`product:${p.id}`) ? "Saving…" : "Save"}
                   </button>
+                  <button
+                    className="remove-link"
+                    type="button"
+                    aria-label={`Remove ${p.name}`}
+                    disabled={pending.includes(`product:${p.id}`)}
+                    onClick={async () => {
+                      if (
+                        !window.confirm(`Remove ${p.name} from your catalogue?`)
+                      )
+                        return;
+                      setError("");
+                      try {
+                        await actions.deleteProduct(p.id);
+                      } catch (cause) {
+                        setError(
+                          cause instanceof Error
+                            ? cause.message
+                            : "Unable to remove this product.",
+                        );
+                      }
+                    }}
+                  >
+                    Remove
+                  </button>
                 </form>
               ))}
           </div>
           {!state.merchant_products.length && (
             <Empty title="No products yet">
-              Your shop’s products will appear here when they are available.
+              Add a product above to start your shop’s catalogue.
             </Empty>
           )}
         </section>
