@@ -62,7 +62,9 @@ Optional `photo_url` is a short-lived, owner-authorized GET URL. The frontend fe
 ### Merchant resources
 
 - `GET merchant/products/`: product rows belonging to the authenticated merchant only.
+- `POST merchant/products/`: `{name,description,category,price_cents,stock}` creates a product for the authenticated merchant. `category` is the category ID. Image upload and product-group assignment remain later work.
 - `PATCH merchant/products/{id}/`: `{price_cents,stock}`; backend validates membership/ownership and values.
+- `DELETE merchant/products/{id}/`: removes a product owned by the authenticated merchant; another merchant’s product returns 404.
 - `GET merchant/orders/`: merchant sub-order rows `{id,created_at,merchant:{id,name,slug},subtotal_cents,status,items:[...]}` using the order-item shape above.
 - `PATCH merchant/orders/{id}/`: `{status}`. UI transitions are `paid → processing → shipped → delivered`; the backend must reject invalid transitions and access to another merchant’s sub-order.
 
