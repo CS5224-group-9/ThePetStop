@@ -6,6 +6,7 @@ import type {
   Category,
   Merchant,
   NewPetInput,
+  NewProductInput,
   ShippingInput,
 } from "./types.ts";
 const id = (value: string) => encodeURIComponent(value);
@@ -164,11 +165,32 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
         map.merchantOrder,
       );
     },
+    async createProduct(
+      input: NewProductInput,
+      categories: Category[],
+      merchants: Merchant[],
+    ) {
+      return map.product(
+        await client.request("merchant/products/", {
+          ...privateRequest,
+          method: "POST",
+          json: input,
+        }),
+        categories,
+        merchants,
+      );
+    },
     async updateProduct(productId: string, price_cents: number, stock: number) {
       await client.request(`merchant/products/${id(productId)}/`, {
         ...privateRequest,
         method: "PATCH",
         json: { price_cents, stock },
+      });
+    },
+    async deleteProduct(productId: string) {
+      await client.request(`merchant/products/${id(productId)}/`, {
+        ...privateRequest,
+        method: "DELETE",
       });
     },
     async updateMerchantOrder(orderId: string, status: string) {

@@ -67,7 +67,11 @@ type Context = {
     updateCart: (id: string, quantity: number) => Promise<void>;
     removeCart: (id: string) => Promise<void>;
     checkout: (input: ShippingInput, key: string) => Promise<string>;
+    createProduct: (
+      input: Parameters<typeof services.createProduct>[0],
+    ) => Promise<void>;
     updateProduct: (id: string, price: number, stock: number) => Promise<void>;
+    deleteProduct: (id: string) => Promise<void>;
     updateMerchantOrder: (id: string, status: string) => Promise<void>;
   };
 };
@@ -385,12 +389,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           await Promise.all([refresh("catalogue"), refresh("merchant")]);
         return order.id;
       }),
+    createProduct: (input) =>
+      perform("product:create", async (guard) => {
+        await services.createProduct(
+          input,
+          stateRef.current.categories,
+          stateRef.current.merchants,
+        );
+        guard();
+        await Promise.all([refresh("merchant"), refresh("catalogue")]);
+        notify("Product added.");
+      }),
     updateProduct: (id, price, stock) =>
       perform(`product:${id}`, async (guard) => {
         await services.updateProduct(id, price, stock);
         guard();
         await Promise.all([refresh("merchant"), refresh("catalogue")]);
         notify("Product updated.");
+      }),
+    deleteProduct: (id) =>
+      perform(`product:${id}`, async (guard) => {
+        await services.deleteProduct(id);
+        guard();
+        await Promise.all([refresh("merchant"), refresh("catalogue")]);
+        if (localUI) await refresh("cart");
+        notify("Product removed.");
       }),
     updateMerchantOrder: (id, status) =>
       perform(`order:${id}`, async (guard) => {
