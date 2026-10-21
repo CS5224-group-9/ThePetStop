@@ -8,6 +8,7 @@ The project is at the scaffolding stage: the backend foundation (settings, Postg
 
 - [frontend/](frontend/): Next.js app, managed with Yarn. See [frontend/README.md](frontend/README.md).
 - [backend/](backend/): Django API, managed with uv. See [backend/README.md](backend/README.md).
+- [infra/](infra/): AWS CDK app in TypeScript, managed with Yarn. See [infra/README.md](infra/README.md) for AWS sign-in and deploy steps.
 - [docs/](docs/): project context.
   - [product-context.md](docs/product-context.md): MVP scope, out-of-scope items, and evaluation needs.
   - [architecture.md](docs/architecture.md): AWS architecture, current state, and decisions.

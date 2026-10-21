@@ -206,6 +206,9 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 | `DJANGO_DEBUG` | `True` locally. Anything else means off. |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames. |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call the API, such as the Next.js dev server. |
-| `DATABASE_URL` | Required. Matches `docker-compose.yml` by default. |
+| `DATABASE_URL` | Required locally. Matches `docker-compose.yml` by default. |
+| `COGNITO_ISSUER`, `COGNITO_CLIENT_ID` | Optional locally. Set them to the dev user pool (the `PetStop-Dev-Auth` stack outputs) to accept the frontend's bearer tokens; blank means only the admin session login works. |
+
+In AWS, the `PetStop-Dev-Api` stack sets these instead: `DJANGO_SECRET_KEY_ARN` and `DB_SECRET_ARN` (secrets read at start-up, replacing `DJANGO_SECRET_KEY` and `DATABASE_URL`) and `COGNITO_JWKS` (the pool's public keys, because the Lambda has no internet access).
 
 When you add a variable, add it to `.env.example` with a placeholder value in the same pull request.
