@@ -2,7 +2,7 @@
 
 Milestones and workstreams from the MVP Development Plan, mapped onto this repository. The full plan, with per-sprint checklists, is the team's live plan: <https://claude.ai/code/artifact/d518d744-3763-4feb-bba7-50de560b0b85>.
 
-Last updated 2026-10-16.
+Last updated 2026-10-25.
 
 ## Milestones
 
@@ -62,6 +62,14 @@ Mostly workstream A, with input from everyone:
    - C inspects the AVS registry format, gets a OneMap account and tests one geocode, and tests a MapLibre map with OneMap tiles;
    - D2 drafts the catalogue models and reviews them with D1, and plans the seed catalogue with D3 (format in [data-model.md](data-model.md#seed-catalogue));
    - D2 sends the pet-owner requirements survey, with results by about 25 Oct.
+
+## D2 status as of 25 Oct 2026
+
+- Implemented the marketplace catalogue schema and initial migration, including the cart/order tables D3 builds on.
+- Added an idempotent `load_catalogue` command and fictional seed data for D2 shops 1 through 3 (24 products each, six categories, 24 cross-shop comparison groups). D3 still needs to add shops 4 through 6.
+- Added public catalogue, search/filter, merchant storefront and product comparison API routes. The frontend supports catalogue browsing, category/species/merchant/price filters, sorting, product details, offer comparisons and merchant storefronts in standalone UI mode.
+- Drafted the pet-owner requirements survey and summarized the supplied 64-row simulated dataset in [pet-owner-requirements-survey.md](pet-owner-requirements-survey.md). There are no real respondent results; report the figures as simulated only.
+- Prepared the moderator script, task cards and observation sheet in [usability-test-plan.md](usability-test-plan.md); recruiting participants and running sessions remain future work for 3?5 Nov.
 
 ## Demo checks
 

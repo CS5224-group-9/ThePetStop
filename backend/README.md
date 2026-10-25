@@ -212,3 +212,13 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 In AWS, the `PetStop-Dev-Api` stack sets these instead: `DJANGO_SECRET_KEY_ARN` and `DB_SECRET_ARN` (secrets read at start-up, replacing `DJANGO_SECRET_KEY` and `DATABASE_URL`) and `COGNITO_JWKS` (the pool's public keys, because the Lambda has no internet access).
 
 When you add a variable, add it to `.env.example` with a placeholder value in the same pull request.
+
+### Marketplace catalogue
+
+Load the committed fictional catalogue fixtures after applying migrations:
+
+```powershell
+uv run python .\manage.py load_catalogue
+```
+
+The command is idempotent. D2's three fixtures contain 24 products per shop; D3 can add shops 4–6 in additional shop-N.json files.

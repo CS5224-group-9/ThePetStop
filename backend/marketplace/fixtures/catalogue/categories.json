@@ -1,0 +1,32 @@
+[
+  {
+    "slug": "food",
+    "name": "Food",
+    "sort_order": 1
+  },
+  {
+    "slug": "treats",
+    "name": "Treats",
+    "sort_order": 2
+  },
+  {
+    "slug": "health-hygiene",
+    "name": "Health & Hygiene",
+    "sort_order": 3
+  },
+  {
+    "slug": "toys",
+    "name": "Toys",
+    "sort_order": 4
+  },
+  {
+    "slug": "accessories",
+    "name": "Accessories",
+    "sort_order": 5
+  },
+  {
+    "slug": "grooming-supplies",
+    "name": "Grooming Supplies",
+    "sort_order": 6
+  }
+]

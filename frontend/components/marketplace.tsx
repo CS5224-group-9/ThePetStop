@@ -66,17 +66,35 @@ function useBasket() {
     }
   };
 }
-export function Shop() {
+export function Shop({ storefront = false }: { storefront?: boolean }) {
   const { state, pending } = useApp();
   const add = useBasket();
+  const params = useSearchParams();
+  const merchantSlug = storefront ? params.get("merchant") : null;
+  const merchant = state.merchants.find((item) => item.slug === merchantSlug);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [species, setSpecies] = useState("");
+  const [merchantId, setMerchantId] = useState("");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
   const [sort, setSort] = useState("catalogue");
+  const toCents = (value: string) => {
+    if (!value) return null;
+    const amount = Number(value);
+    return Number.isFinite(amount) && amount >= 0
+      ? Math.round(amount * 100)
+      : null;
+  };
+  const minCents = toCents(minPrice);
+  const maxCents = toCents(maxPrice);
   const reset = () => {
     setQuery("");
     setCategory("");
     setSpecies("");
+    setMerchantId("");
+    setMinPrice("");
+    setMaxPrice("");
     setSort("catalogue");
   };
   const filtered = state.products
@@ -84,6 +102,10 @@ export function Shop() {
       (p) =>
         (!category || p.category_id === category) &&
         (!species || p.species === species) &&
+        (!merchantId || p.merchant_id === merchantId) &&
+        (minCents === null || p.price_cents >= minCents) &&
+        (maxCents === null || p.price_cents <= maxCents) &&
+        (!storefront || Boolean(merchant && p.merchant_id === merchant.id)) &&
         `${p.name} ${p.category} ${p.merchant}`
           .toLowerCase()
           .includes(query.toLowerCase()),
@@ -95,12 +117,27 @@ export function Shop() {
           ? b.price_cents - a.price_cents
           : 0,
     );
+  if (storefront && state.merchants.length && (!merchantSlug || !merchant))
+    return (
+      <Empty title="Shop not found">
+        <Link href="/shop/">Return to the product catalogue</Link>
+      </Empty>
+    );
   return (
     <>
       <PageHeading
-        eyebrow="MARKETPLACE / PRODUCT CATALOGUE"
-        title="Pet nutrition & everyday care"
-        description="Browse supplies and compare offers from participating merchants. Prices are in SGD."
+        eyebrow={
+          storefront ? "MARKETPLACE / SHOP" : "MARKETPLACE / PRODUCT CATALOGUE"
+        }
+        title={
+          merchant?.name ||
+          (storefront ? "Merchant storefront" : "Pet nutrition & everyday care")
+        }
+        description={
+          storefront
+            ? "Browse this shop's products and compare equivalent items across merchants."
+            : "Browse supplies and compare offers from participating merchants. Prices are in SGD."
+        }
         action={
           <Link className="button secondary" href="/cart/">
             <Icon name="bag" size={18} />
@@ -114,7 +151,11 @@ export function Shop() {
             <Icon name="shield" size={25} />
           </span>
           <div>
-            <h2>One basket across your favourite shops</h2>
+            <h2>
+              {merchant
+                ? `Shop ${merchant.name}`
+                : "One basket across your favourite shops"}
+            </h2>
             <p>
               Review each merchant’s price and stock before checkout. Payment is
               simulated for this MVP.
@@ -175,6 +216,45 @@ export function Shop() {
                     <option key={s}>{s}</option>
                   ))}
               </select>
+            </label>
+            {!storefront && (
+              <label className="filter-label">
+                SHOP
+                <select
+                  aria-label="Filter by shop"
+                  value={merchantId}
+                  onChange={(event) => setMerchantId(event.target.value)}
+                >
+                  <option value="">All shops</option>
+                  {state.merchants.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="filter-label">
+              MINIMUM PRICE (SGD)
+              <input
+                aria-label="Minimum price in Singapore dollars"
+                type="number"
+                min="0"
+                step="0.01"
+                value={minPrice}
+                onChange={(event) => setMinPrice(event.target.value)}
+              />
+            </label>
+            <label className="filter-label">
+              MAXIMUM PRICE (SGD)
+              <input
+                aria-label="Maximum price in Singapore dollars"
+                type="number"
+                min="0"
+                step="0.01"
+                value={maxPrice}
+                onChange={(event) => setMaxPrice(event.target.value)}
+              />
             </label>
             <div className="filter-info">
               <Icon name="shield" size={22} />
@@ -242,7 +322,21 @@ export function Shop() {
                       >
                         <h3>{p.name}</h3>
                       </Link>
-                      <p>{p.merchant}</p>
+                      {(() => {
+                        const shop = state.merchants.find(
+                          (item) => item.id === p.merchant_id,
+                        );
+                        return shop ? (
+                          <Link
+                            className="text-link"
+                            href={`/shop/store/?merchant=${encodeURIComponent(shop.slug)}`}
+                          >
+                            {p.merchant}
+                          </Link>
+                        ) : (
+                          <p>{p.merchant}</p>
+                        );
+                      })()}
                       <div className="product-tags">
                         <Badge tone={p.stock ? "green" : "rose"}>
                           {p.stock ? "In stock" : "Out of stock"}
@@ -349,6 +443,9 @@ export function ProductDetail() {
         </Link>
       </div>
     );
+  const merchantStore = state.merchants.find(
+    (item) => item.id === p.merchant_id,
+  );
   return (
     <>
       <PageHeading
@@ -364,7 +461,17 @@ export function ProductDetail() {
       <div className="product-detail-grid">
         <ProductArt product={p} />
         <section className="panel">
-          <Badge tone="green">{p.merchant}</Badge>
+          <Badge tone="green">
+            {merchantStore ? (
+              <Link
+                href={`/shop/store/?merchant=${encodeURIComponent(merchantStore.slug)}`}
+              >
+                {p.merchant}
+              </Link>
+            ) : (
+              p.merchant
+            )}
+          </Badge>
           <h2>{p.name}</h2>
           <p>{p.description}</p>
           <div className="product-detail-price">

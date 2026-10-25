@@ -4,7 +4,7 @@
 
 Run `yarn install --frozen-lockfile` then `yarn dev`. No environment configuration, backend or sign-in is required. `NEXT_PUBLIC_DATA_SOURCE=local` is the default, even if an API URL is present. Restart/rebuild after changing this setting.
 
-The dashboard, three sample pets, six fictional shops (24 products per shop), price comparison, local cart, simulated checkout, order history and merchant workspace are usable immediately. Pet registration, care records, reminders and merchant changes save in this browser’s local storage. This is a single local workspace, not a secure account; use sample information. Clearing site storage resets it. If storage is blocked or full, browsing still works but saving shows an error.
+The dashboard, three sample pets, six fictional shops (24 products per shop), shop storefronts, price comparison, local cart, simulated checkout, order history and merchant workspace are usable immediately. Pet registration, care records, reminders and merchant changes save in this browser’s local storage. This is a single local workspace, not a secure account; use sample information. Clearing site storage resets it. If storage is blocked or full, browsing still works but saving shows an error.
 
 Facility search and filters use clearly fictional listings and an offline schematic map with selectable pins. Directions open an external map. Document selection and download work within the current tab; files are kept in memory and disappear on reload. No files are uploaded.
 
@@ -14,7 +14,7 @@ To enable the existing API integration later, set `NEXT_PUBLIC_DATA_SOURCE=api` 
 
 Next.js App Router frontend for the Singapore pet-care MVP. It retains the clinical visual system and static S3/CloudFront export, but now uses API-backed state and Cognito sign-in. There is no demo account picker, embedded catalogue, sample pet roster, browser-backed database or local checkout implementation.
 
-The Django backend remains separate and currently has no feature endpoints. Until the API and Cognito are configured, the frontend shows service-unavailable/sign-in-unavailable states. A successful static build does not certify a live production deployment.
+The Django backend now includes public marketplace catalogue endpoints; pet, facility, cart, checkout, order and merchant write endpoints remain separate integration work. Until the API and Cognito are configured, the frontend shows service-unavailable/sign-in-unavailable states. A successful static build does not certify a live production deployment.
 
 ## Run locally
 
@@ -50,7 +50,7 @@ All writes wait for a server response. Basket writes send product IDs and quanti
 
 ## Pages and interactions
 
-Public: `/`, `/login/`, `/auth/callback/`, `/map/`, `/shop/`, `/shop/product/?id=…`.
+Public: `/`, `/login/`, `/auth/callback/`, `/map/`, `/shop/`, `/shop/product/?id=product-id`, `/shop/store/?merchant=shop-slug`.
 
 Signed-in: `/pets/`, `/pets/new/`, `/pets/detail/?id=…`, `/pets/reminders/`, `/cart/`, `/checkout/`, `/orders/`, `/orders/detail/?id=…`.
 

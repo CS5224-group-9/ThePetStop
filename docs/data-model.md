@@ -1,12 +1,12 @@
 # Data model
 
-Draft Django models for the MVP. This file is the source of truth for models; the MVP Development Plan lists only model names and points here. None of these exist yet. Agree a model with its workstream owner before migrating it, and update this file when a model changes.
+Django marketplace catalogue models are implemented; the remaining domain models are drafts. This file is the source of truth for models; the MVP Development Plan lists only model names and points here. Coordinate marketplace schema changes with D1 and D3, and update this file when a model changes.
 
 Each app's tables share one PostgreSQL schema with the app name as prefix (`pets_pet`, `marketplace_product`), which keeps the domains separate without custom schema routing.
 
 Owners: `accounts` A, `pets` B, `facilities` C, `marketplace` D2 for migrations and the catalogue, D3 for cart and orders, D1 for merchant writes. Agree models by **Fri 16 Oct** and refine them in Sprint 1.
 
-Last updated 2026-10-16.
+Last updated 2026-10-25.
 
 ## Conventions
 
@@ -72,7 +72,7 @@ Required by the MVP brief: fictional shops only, no real brands or businesses pr
 - **30–40 product groups** shared by two or more shops at different prices, so "also sold by" shows real comparisons.
 - Product names may be generic, such as "Grain-free salmon dry cat food, 2 kg". Avoid real trademarks.
 
-D2 and D3 split the seed work. D2 owns the shared files and the catalogue migrations. File layout, so the two do not edit the same file:
+D2 and D3 split the seed work. D2 has committed three fictional shops with 24 products each (72 rows) and 24 shared product groups; D3 adds shops 4 through 6 and can add further groups to reach the final target of 30 to 40. D2 owns the shared files and the catalogue migrations. File layout, so the two do not edit the same file:
 
 ```text
 backend/marketplace/fixtures/catalogue/

@@ -2,11 +2,11 @@
 
 ## Standalone frontend UI
 
-The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six fictional merchant catalogues, facility search with an offline schematic map, care records/reminders, browser-persisted cart and simulated orders, plus merchant editing. No API or Cognito setup is needed to explore these flows. Local data is a single browser workspace for sample information; document files remain in tab memory until reload. Listings are fictional and unverified. Set `NEXT_PUBLIC_DATA_SOURCE=api` to opt into the previously implemented API/Cognito boundary described below; backend endpoints remain a separate task. Local mode does not replace API authorization or implement AWS services.
+The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six fictional merchant catalogues, facility search with an offline schematic map, care records/reminders, browser-persisted cart and simulated orders, plus merchant editing and per-shop storefronts. No API or Cognito setup is needed to explore these flows. Local data is a single browser workspace for sample information; document files remain in tab memory until reload. Listings are fictional and unverified. Set `NEXT_PUBLIC_DATA_SOURCE=api` to opt into the previously implemented API/Cognito boundary described below; the marketplace catalogue API is implemented, while the other feature endpoints remain outstanding. Local mode does not replace API authorization or implement AWS services.
 
 The target AWS architecture for the MVP, what is built today, and the decisions still open. Scope is in [product-context.md](product-context.md); file layout and API routes are in [repository-structure.md](repository-structure.md).
 
-Last updated 2026-10-21. Re-check the code before trusting the "Current state" section.
+Last updated 2026-10-25. Re-check the code before trusting the "Current state" section.
 
 ## Stack
 
@@ -99,12 +99,12 @@ A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so loc
 
 ## Current state
 
-Checked 2026-10-21 against the working tree.
+Checked 2026-10-25 against the working tree.
 
 | Area | What exists |
 | --- | --- |
 | Frontend | Static-export frontend that defaults to local sample data, browser-persisted profiles/reminders/cart/orders, a schematic facility map and merchant editing. Explicit API mode retains configurable Cognito OIDC/PKCE, pet/document/cart/order operations and MapLibre/OneMap. Backend feature endpoints and actual AWS configuration remain unimplemented here; see `docs/frontend-integration.md` for the proposed wire contract and deployment boundary. |
-| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally, Secrets Manager in AWS). Apps: `api` (shared error format, Cognito authentication and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`, which returns `groups` and a `merchant` that is always null for now), and empty `pets`, `facilities` and `marketplace`. `Dockerfile` and `config/lambda_handler.py` package it for Lambda. Django tests cover `/me/`, `/health/` and token validation. |
+| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally, Secrets Manager in AWS). Apps: `api` (shared error format, Cognito authentication and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`, which returns `groups` and a `merchant` that is always null for now), empty `pets` and `facilities`, and `marketplace` with catalogue models, migration, public category/merchant/product APIs, comparison offers, and an idempotent fixture loader. `Dockerfile` and `config/lambda_handler.py` package it for Lambda. Django tests cover `/me/`, `/health/` and token validation. |
 | Database | PostgreSQL 16 in Docker Compose (`docker-compose.yml` at the repo root), read through `DATABASE_URL`. `accounts.User` is the user model from the first migration. |
 | Auth | `api.authentication.CognitoAuthentication` verifies Cognito access tokens (issuer, `client_id`, `token_use`, signature) and maps `sub` to `accounts.User`; session auth remains for the admin. A missing login returns 401. A pre-token-generation trigger adds `email` to access tokens. Users are not added to `owner` automatically; anyone not in `merchant` is treated as an owner. |
 | Files, external data | None. |
