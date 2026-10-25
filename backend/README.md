@@ -225,6 +225,8 @@ The command is idempotent. D2's three fixtures contain 24 products per shop; D3 
 
 ### OneMap location search (local development)
 
+The facilities API contract is documented in [the facilities OpenAPI specification](../docs/openapi/facilities.yaml). It marks the implemented location search separately from the planned facility list and detail routes.
+
 `GET /api/v1/locations/search/?q=Bishan` is public and independent of the facility registry. It returns `{"results":[{"label":"…","postal_code":"570001","latitude":1.35,"longitude":103.83}]}` (illustrative coordinates), or an empty results list. Queries must contain 2–120 characters. Results contain at most 10 unique valid locations from OneMap's first result page; this is not exhaustive pagination.
 
 Register and confirm a OneMap account at <https://www.onemap.gov.sg/apidocs/register>. Optionally set an existing `ONEMAP_ACCESS_TOKEN` in your ignored `backend/.env`. Set `ONEMAP_EMAIL` and `ONEMAP_PASSWORD` to obtain replacement tokens automatically, then restart Django. Never put them in frontend variables. Without a usable token or renewal credentials, search returns a structured 503; no sample addresses are substituted. Basemap tiles and browser geolocation still work without these credentials.
