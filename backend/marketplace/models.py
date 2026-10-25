@@ -104,6 +104,9 @@ class CartItem(models.Model):
             ),
         ]
 
+    def __str__(self):
+        return f"Cart item {self.product_id} for user {self.user_id}"
+
 
 class Order(models.Model):
     PENDING_PAYMENT = "pending_payment"
@@ -129,6 +132,9 @@ class Order(models.Model):
     payment_ref = models.CharField(max_length=80, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Order {self.pk} ({self.status})"
 
 
 class MerchantOrder(models.Model):
@@ -156,6 +162,9 @@ class MerchantOrder(models.Model):
             )
         ]
 
+    def __str__(self):
+        return f"Merchant order {self.pk} ({self.status})"
+
 
 class OrderItem(models.Model):
     merchant_order = models.ForeignKey(
@@ -165,3 +174,6 @@ class OrderItem(models.Model):
     product_name = models.CharField(max_length=200)
     unit_price_cents = models.PositiveIntegerField()
     quantity = models.PositiveSmallIntegerField()
+
+    def __str__(self):
+        return f"{self.product_name} x {self.quantity}"
