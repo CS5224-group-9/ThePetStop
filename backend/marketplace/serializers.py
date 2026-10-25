@@ -23,9 +23,20 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            "id", "name", "slug", "description", "species", "size", "price_cents",
-            "stock", "product_type", "duration_minutes", "category", "merchant",
-            "image_key", "image_url",
+            "id",
+            "name",
+            "slug",
+            "description",
+            "species",
+            "size",
+            "price_cents",
+            "stock",
+            "product_type",
+            "duration_minutes",
+            "category",
+            "merchant",
+            "image_key",
+            "image_url",
         ]
 
     def get_image_url(self, obj):
@@ -35,6 +46,7 @@ class ProductSerializer(serializers.ModelSerializer):
             return obj.image_key
         # Product image delivery is added by D3 with the product-images bucket.
         return None
+
 
 class ProductDetailSerializer(ProductSerializer):
     also_sold_by = serializers.SerializerMethodField()
@@ -46,7 +58,9 @@ class ProductDetailSerializer(ProductSerializer):
         if not obj.group_id:
             return []
         peers = (
-            Product.objects.filter(group_id=obj.group_id, active=True, merchant__active=True)
+            Product.objects.filter(
+                group_id=obj.group_id, active=True, merchant__active=True
+            )
             .exclude(pk=obj.pk)
             .select_related("merchant", "category")
             .order_by("price_cents", "merchant__name")

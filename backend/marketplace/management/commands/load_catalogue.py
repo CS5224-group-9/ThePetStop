@@ -14,7 +14,9 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--fixture-dir",
-            default=str(Path(settings.BASE_DIR) / "marketplace" / "fixtures" / "catalogue"),
+            default=str(
+                Path(settings.BASE_DIR) / "marketplace" / "fixtures" / "catalogue"
+            ),
             help="Catalogue fixture directory",
         )
 
@@ -22,8 +24,12 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         root = Path(options["fixture_dir"])
         try:
-            categories = json.loads((root / "categories.json").read_text(encoding="utf-8"))
-            groups = json.loads((root / "product_groups.json").read_text(encoding="utf-8"))
+            categories = json.loads(
+                (root / "categories.json").read_text(encoding="utf-8")
+            )
+            groups = json.loads(
+                (root / "product_groups.json").read_text(encoding="utf-8")
+            )
         except (OSError, json.JSONDecodeError) as exc:
             raise CommandError(f"Cannot read catalogue shared fixtures: {exc}") from exc
 
@@ -43,7 +49,9 @@ class Command(BaseCommand):
                 payload = json.loads(fixture.read_text(encoding="utf-8"))
                 merchant_data = payload["merchant"]
             except (OSError, json.JSONDecodeError, KeyError) as exc:
-                raise CommandError(f"Invalid merchant fixture {fixture.name}: {exc}") from exc
+                raise CommandError(
+                    f"Invalid merchant fixture {fixture.name}: {exc}"
+                ) from exc
             merchant, _ = Merchant.objects.update_or_create(
                 slug=merchant_data["slug"],
                 defaults={
@@ -65,17 +73,25 @@ class Command(BaseCommand):
                         merchant=merchant,
                         slug=row["slug"],
                         defaults={
-                            "category": category, "group": group, "name": row["name"],
+                            "category": category,
+                            "group": group,
+                            "name": row["name"],
                             "description": row.get("description", ""),
                             "species": row.get("species", "all pets"),
-                            "size": row.get("size", ""), "price_cents": row["price_cents"],
-                            "stock": row.get("stock", 0), "image_key": row.get("image_key", ""),
+                            "size": row.get("size", ""),
+                            "price_cents": row["price_cents"],
+                            "stock": row.get("stock", 0),
+                            "image_key": row.get("image_key", ""),
                             "product_type": row.get("product_type", Product.PRODUCT),
                             "duration_minutes": row.get("duration_minutes"),
                             "active": row.get("active", True),
                         },
                     )
-                except (KeyError, Category.DoesNotExist, ProductGroup.DoesNotExist) as exc:
+                except (
+                    KeyError,
+                    Category.DoesNotExist,
+                    ProductGroup.DoesNotExist,
+                ) as exc:
                     raise CommandError(
                         f"Invalid product in {fixture.name}: {row.get('slug', '(no slug)')}: {exc}"
                     ) from exc

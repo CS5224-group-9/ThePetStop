@@ -36,15 +36,17 @@ class ProductListView(generics.ListAPIView):
     serializer_class = ProductSerializer
 
     def get_queryset(self):
-        queryset = Product.objects.filter(active=True, merchant__active=True).select_related(
-            "category", "merchant", "group"
-        )
+        queryset = Product.objects.filter(
+            active=True, merchant__active=True
+        ).select_related("category", "merchant", "group")
         params = self.request.query_params
         query = params.get("q", "").strip()
         if query:
             queryset = queryset.filter(
-                Q(name__icontains=query) | Q(description__icontains=query)
-                | Q(category__name__icontains=query) | Q(merchant__name__icontains=query)
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(category__name__icontains=query)
+                | Q(merchant__name__icontains=query)
             )
         for key, field in (("category", "category"), ("merchant", "merchant")):
             value = params.get(key)
@@ -66,7 +68,9 @@ class ProductListView(generics.ListAPIView):
             queryset = queryset.filter(product_type=product_type)
         species = params.get("species")
         if species:
-            queryset = queryset.filter(Q(species__iexact=species) | Q(species__iexact="all pets"))
+            queryset = queryset.filter(
+                Q(species__iexact=species) | Q(species__iexact="all pets")
+            )
         sort = params.get("sort")
         if sort == "price_asc":
             queryset = queryset.order_by("price_cents", "name")
@@ -80,9 +84,9 @@ class ProductListView(generics.ListAPIView):
 class ProductDetailView(generics.RetrieveAPIView):
     permission_classes = [AllowAny]
     serializer_class = ProductDetailSerializer
-    queryset = Product.objects.filter(active=True, merchant__active=True).select_related(
-        "category", "merchant", "group"
-    )
+    queryset = Product.objects.filter(
+        active=True, merchant__active=True
+    ).select_related("category", "merchant", "group")
 
 
 class MerchantProductListView(generics.ListAPIView):

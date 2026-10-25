@@ -44,10 +44,18 @@ class Product(models.Model):
     SERVICE = "service"
     TYPE_CHOICES = [(PRODUCT, "Product"), (SERVICE, "Service")]
 
-    merchant = models.ForeignKey(Merchant, on_delete=models.PROTECT, related_name="products")
-    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="products")
+    merchant = models.ForeignKey(
+        Merchant, on_delete=models.PROTECT, related_name="products"
+    )
+    category = models.ForeignKey(
+        Category, on_delete=models.PROTECT, related_name="products"
+    )
     group = models.ForeignKey(
-        ProductGroup, null=True, blank=True, on_delete=models.SET_NULL, related_name="products"
+        ProductGroup,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="products",
     )
     name = models.CharField(max_length=200)
     slug = models.SlugField()
@@ -57,7 +65,9 @@ class Product(models.Model):
     price_cents = models.PositiveIntegerField()
     stock = models.PositiveIntegerField(default=0)
     image_key = models.CharField(max_length=512, blank=True)
-    product_type = models.CharField(max_length=12, choices=TYPE_CHOICES, default=PRODUCT)
+    product_type = models.CharField(
+        max_length=12, choices=TYPE_CHOICES, default=PRODUCT
+    )
     duration_minutes = models.PositiveSmallIntegerField(null=True, blank=True)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -74,7 +84,7 @@ class Product(models.Model):
         indexes = [
             models.Index(
                 fields=["active", "category"],
-                name="marketplace_active_category_idx",
+                name="mkt_active_category_idx",
             ),
             models.Index(
                 fields=["active", "price_cents"],
@@ -90,7 +100,9 @@ class CartItem(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="cart_items"
     )
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="cart_items")
+    product = models.ForeignKey(
+        Product, on_delete=models.PROTECT, related_name="cart_items"
+    )
     quantity = models.PositiveSmallIntegerField(default=1)
 
     class Meta:
@@ -123,7 +135,9 @@ class Order(models.Model):
         on_delete=models.PROTECT,
         related_name="marketplace_orders",
     )
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING_PAYMENT)
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=PENDING_PAYMENT
+    )
     total_cents = models.PositiveIntegerField(default=0)
     shipping_name = models.CharField(max_length=160)
     shipping_phone = models.CharField(max_length=40)
@@ -148,8 +162,12 @@ class MerchantOrder(models.Model):
         for value in (PAID, PROCESSING, SHIPPED, DELIVERED, CANCELLED)
     ]
 
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="merchant_orders")
-    merchant = models.ForeignKey(Merchant, on_delete=models.PROTECT, related_name="orders")
+    order = models.ForeignKey(
+        Order, on_delete=models.CASCADE, related_name="merchant_orders"
+    )
+    merchant = models.ForeignKey(
+        Merchant, on_delete=models.PROTECT, related_name="orders"
+    )
     subtotal_cents = models.PositiveIntegerField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PAID)
     updated_at = models.DateTimeField(auto_now=True)
@@ -170,7 +188,9 @@ class OrderItem(models.Model):
     merchant_order = models.ForeignKey(
         MerchantOrder, on_delete=models.CASCADE, related_name="items"
     )
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="order_items")
+    product = models.ForeignKey(
+        Product, on_delete=models.PROTECT, related_name="order_items"
+    )
     product_name = models.CharField(max_length=200)
     unit_price_cents = models.PositiveIntegerField()
     quantity = models.PositiveSmallIntegerField()
