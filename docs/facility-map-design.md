@@ -44,12 +44,14 @@ Find pet care in Singapore                 Sample listings
 Selected facility details (only after selection; dismissible)
 ```
 
-Compact width: heading → search → wrapping scope/actions → map → results → details. Map/list controls can hide either pane. No fixed-height scrolling list at compact widths, so browser zoom and larger text can expand the page.
+Compact width: heading → search → wrapping scope/actions → map → results → details. Both map and results stay visible; desktop uses a split view and compact widths stack them. No fixed-height scrolling list at compact widths, so browser zoom and larger text can expand the page.
 
 Motion: one camera movement on explicit selection or geolocation; disabled for reduced motion. Opaque surfaces need no reduced-transparency fallback. Existing system dark appearance is retained; map provider artwork remains unmodified. Retain textual labels and distinct icons alongside colour.
 
 ## Implementation and verification
 
-The directory owns search, scope, layout and selected facility state. MapLibre renders the map, stable keyboard-accessible pin buttons and selection feedback. Details stay below the map, matching the user's preference. Search remains facility filtering; address geocoding is separate future work.
+The directory owns search, scope, layout and selected facility state. MapLibre renders the map, stable keyboard-accessible pin buttons and selection feedback. Details stay below the map, matching the user's preference. A single location-first input retrieves address/postal-code suggestions. Selection sets the centre; the sidebar shows facilities within the chosen radius, nearest first. Category filters refine these results. Search centres use a pin, device locations use a blue dot, and a dashed map boundary shows the selected radius. Location search uses the shared API client and centres a selected result without implying facility verification; production search networking remains PR 3 work.
 
-Check formatting, ESLint, TypeScript and existing behaviour tests. Manually verify light/dark appearances, 320px widths, 200% text/zoom, keyboard pin selection, map/list switching, selected details dismissal and location failure. A production build in the current Linux shell is limited by Windows-installed native SWC/Lightning CSS packages.
+Check formatting, ESLint, TypeScript and existing behaviour tests. Manually verify light/dark appearances, 320px widths, 200% text/zoom, keyboard pin selection, map/list switching, selected details dismissal and location failure. The Linux runtime cannot use the installed Windows native SWC/Lightning CSS packages; the production static export was verified successfully with Windows Node during PR 2.
+
+Radius refinement: offer 1/2/5/10/20 km and All Singapore; disable the control until a centre is selected. Label distances as straight-line and keep the distance computation consistent with the displayed boundary. Clear search resets the centre; changing the radius preserves category choices.

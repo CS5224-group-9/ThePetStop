@@ -222,3 +222,21 @@ uv run python .\manage.py load_catalogue
 ```
 
 The command is idempotent. D2's three fixtures contain 24 products per shop; D3 can add shops 4–6 in additional shop-N.json files.
+
+### OneMap location search (local development)
+
+`GET /api/v1/locations/search/?q=Bishan` is public and independent of the facility registry. It returns `{"results":[{"label":"…","postal_code":"570001","latitude":1.35,"longitude":103.83}]}` (illustrative coordinates), or an empty results list. Queries must contain 2–120 characters. Results contain at most 10 unique valid locations from OneMap's first result page; this is not exhaustive pagination.
+
+Register and confirm a OneMap account at <https://www.onemap.gov.sg/apidocs/register>. Optionally set an existing `ONEMAP_ACCESS_TOKEN` in your ignored `backend/.env`. Set `ONEMAP_EMAIL` and `ONEMAP_PASSWORD` to obtain replacement tokens automatically, then restart Django. Never put them in frontend variables. Without a usable token or renewal credentials, search returns a structured 503; no sample addresses are substituted. Basemap tiles and browser geolocation still work without these credentials.
+
+The client authenticates using `/api/auth/post/getToken`, uses a supplied token until OneMap rejects it, keeps generated tokens in process memory until their reported expiry, and retries once with renewed authentication when search rejects the token (including OneMap's HTTP-200 error payload). HTTPS calls use a fixed host, a four-second socket timeout, bounded response size, and no redirect following. Upstream failure/timeout responses use the shared error contract and never include upstream bodies or credentials. Search is throttled to 30 requests per minute per client identity using Django's cache; this is a development/process-local guard, not a distributed production quota.
+
+Tests never call OneMap or require a database:
+
+```powershell
+uv run python manage.py test facilities --noinput
+```
+
+The current production Django Lambda has no outbound internet access. Interactive OneMap search deployment remains PR 3 work; the local proxy does not change the VPC architecture.
+
+An existing token alone works until rejected. On rejection, the server obtains a new token using the configured email/password and retries the search once. The replacement is reused in memory; `.env` is never rewritten. After a process restart, the configured starting token is tried again. With no renewal credentials, replace the token manually and restart Django. Generated tokens with a known expired timestamp are renewed before the next search; no scheduled refresh job is required.
