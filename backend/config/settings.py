@@ -200,3 +200,9 @@ MAILERS = {
         "BACKEND": "django.core.mail.backends.console.EmailBackend",
     },
 }
+
+# OneMap address search (optional locally; no credentials needed for map tiles).
+ONEMAP_EMAIL = os.environ.get("ONEMAP_EMAIL", "")
+ONEMAP_PASSWORD = os.environ.get("ONEMAP_PASSWORD", "")
+
+ONEMAP_ACCESS_TOKEN = os.environ.get("ONEMAP_ACCESS_TOKEN", "")
