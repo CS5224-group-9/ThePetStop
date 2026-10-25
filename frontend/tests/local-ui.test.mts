@@ -1,9 +1,73 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { currentLocation } from "../lib/location.ts";
 import {
   localServices as service,
   seedLocalState,
 } from "../lib/api/local-services.ts";
+
+test("device location preserves coordinates and accuracy and bounds requests", async () => {
+  const result = await currentLocation(
+    {
+      getCurrentPosition(success, _error, options) {
+        assert.equal(options?.timeout, 10000);
+        assert.equal(options?.enableHighAccuracy, true);
+        success({
+          coords: { latitude: 1.35, longitude: 103.83, accuracy: 25 },
+        } as GeolocationPosition);
+      },
+    },
+    true,
+  );
+  assert.equal(result.latitude, 1.35);
+  assert.equal(result.longitude, 103.83);
+  assert.equal(result.accuracyMetres, 25);
+  assert.equal(result.source, "device");
+});
+
+test("device location reports unsupported browsers, insecure contexts and position errors", async () => {
+  await assert.rejects(currentLocation(undefined, true), /does not support/);
+  await assert.rejects(currentLocation(undefined, false), /HTTPS/);
+  for (const [code, message] of [
+    [1, /permission was denied/],
+    [2, /unavailable/],
+    [3, /timed out/],
+  ] as const) {
+    await assert.rejects(
+      currentLocation(
+        {
+          getCurrentPosition(_success, error) {
+            error!({ code } as GeolocationPositionError);
+          },
+        },
+        true,
+      ),
+      message,
+    );
+  }
+});
+
+test("device location rejects coordinates outside map coverage and malformed coordinates", async () => {
+  for (const [latitude, longitude] of [
+    [51.5, -0.12],
+    [NaN, 103.83],
+    [1.35, Infinity],
+  ]) {
+    await assert.rejects(
+      currentLocation(
+        {
+          getCurrentPosition(success) {
+            success({
+              coords: { latitude, longitude, accuracy: 10 },
+            } as GeolocationPosition);
+          },
+        },
+        true,
+      ),
+      /outside/,
+    );
+  }
+});
 
 test("standalone catalogue covers all merchants/categories and exposes comparison offers", async () => {
   const seeded = seedLocalState();

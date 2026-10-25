@@ -4413,3 +4413,9 @@ footer a:hover {
 .local-map-note {
   bottom: 12px;
 }
+
+/* Facility details follow the map instead of covering its pins. */
+.map-detail.facility-details {
+  position: static;
+  margin-top: 18px;
+}
