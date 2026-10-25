@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Map as LibreMap, Marker } from "maplibre-gl";
+import { radiusArea } from "@/lib/facility-search";
 import { singaporeBounds, type SearchLocation } from "@/lib/location";
 import type { Facility } from "@/lib/api/types";
 function LiveFacilityMap({
@@ -8,11 +9,13 @@ function LiveFacilityMap({
   selected,
   onSelect,
   location,
+  radiusKm,
 }: {
   facilities: Facility[];
   selected: string;
   onSelect: (id: string) => void;
   location: SearchLocation | null;
+  radiusKm: number | null;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<LibreMap | null>(null);
@@ -24,8 +27,11 @@ function LiveFacilityMap({
     let current = true;
     let resize: ResizeObserver | null = null;
     import("maplibre-gl")
-      .then(({ Map, NavigationControl }) => {
+      .then(({ Map, NavigationControl, getVersion, setWorkerUrl }) => {
         if (!current || !container.current) return;
+        // Next.js bundles the main module, so its relative worker URL isn't
+        // reliable. predev/prebuild publish the matching version locally.
+        setWorkerUrl(`/maplibre/${getVersion()}/maplibre-gl-worker.mjs`);
         const instance = new Map({
           container: container.current,
           center: [103.83, 1.35],
@@ -44,6 +50,9 @@ function LiveFacilityMap({
                 tileSize: 256,
                 minzoom: 11,
                 maxzoom: 19,
+                // OneMap's published TileJSON coverage. Avoid tile requests
+                // beyond the provider's extent when panning near the edges.
+                bounds: [103.502, 1.16, 104.11475, 1.56073],
                 attribution:
                   '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" alt="" width="20" height="20" /> <a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a> &copy; contributors | <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>',
               },
@@ -59,11 +68,24 @@ function LiveFacilityMap({
         instance.on("load", () => {
           if (current) setReady(true);
         });
-        instance.on("error", () => {
+        instance.on("error", (event) => {
+          if (process.env.NODE_ENV === "development")
+            console.warn("[Facility map]", event.error);
           if (current)
             setError(
-              "Map tiles are unavailable. You can still use the facility list and directions links.",
+              "Some map content could not load. You can still use the facility list and directions links.",
             );
+        });
+        instance.on("sourcedata", (event) => {
+          // Clear a transient warning when a OneMap tile loads successfully.
+          // Source metadata/idle events alone don't prove that a tile loaded.
+          if (
+            current &&
+            event.sourceId === "onemap" &&
+            event.sourceDataType === "content" &&
+            event.coord
+          )
+            setError("");
         });
         resize = new ResizeObserver(() => instance.resize());
         resize.observe(container.current);
@@ -84,31 +106,90 @@ function LiveFacilityMap({
     };
   }, []);
   useEffect(() => {
-    if (!ready || !map.current || !location) return;
+    if (!ready || !map.current) return;
+    if (!location) {
+      map.current.fitBounds(singaporeBounds, { padding: 40, animate: false });
+      return;
+    }
     let current = true;
     let marker: Marker | undefined;
     const instance = map.current;
     import("maplibre-gl").then(({ Marker }) => {
       if (!current) return;
       const element = document.createElement("div");
-      element.className = "current-location-marker";
+      element.className =
+        location.source === "device"
+          ? "current-location-marker"
+          : "searched-location-marker";
+      if (location.source === "search") {
+        // Constant SVG; location labels are assigned separately as text attributes.
+        element.innerHTML =
+          '<svg viewBox="0 0 32 40" aria-hidden="true"><path d="M16 1C8 1 2 7 2 15c0 10 14 24 14 24s14-14 14-24C30 7 24 1 16 1Z" fill="currentColor" stroke="white" stroke-width="2"/><circle cx="16" cy="15" r="5" fill="white"/></svg>';
+      }
       element.setAttribute("role", "img");
       element.setAttribute("aria-label", location.label);
       element.title = location.label;
-      marker = new Marker({ element })
+      marker = new Marker({
+        element,
+        anchor: location.source === "search" ? "bottom" : "center",
+      })
         .setLngLat([location.longitude, location.latitude])
         .addTo(instance);
-      instance.flyTo({
-        center: [location.longitude, location.latitude],
-        zoom: 15,
-        animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-      });
+      const animate = !window.matchMedia("(prefers-reduced-motion: reduce)")
+        .matches;
+      if (radiusKm === null) {
+        instance.fitBounds(singaporeBounds, { padding: 40, animate });
+      } else {
+        const ring = radiusArea(location, radiusKm).geometry.coordinates[0];
+        const xs = ring.map((point) => point[0]),
+          ys = ring.map((point) => point[1]);
+        instance.fitBounds(
+          [
+            [Math.min(...xs), Math.min(...ys)],
+            [Math.max(...xs), Math.max(...ys)],
+          ],
+          { padding: 40, maxZoom: 15, animate },
+        );
+      }
     });
     return () => {
       current = false;
       marker?.remove();
     };
-  }, [location, ready]);
+  }, [location, radiusKm, ready]);
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    const instance = map.current;
+    const id = "facility-search-radius";
+    if (!location || radiusKm === null) {
+      if (instance.getLayer(`${id}-line`)) instance.removeLayer(`${id}-line`);
+      if (instance.getLayer(`${id}-fill`)) instance.removeLayer(`${id}-fill`);
+      if (instance.getSource(id)) instance.removeSource(id);
+      return;
+    }
+    const data = radiusArea(location, radiusKm);
+    const source = instance.getSource<import("maplibre-gl").GeoJSONSource>(id);
+    if (source) source.setData(data);
+    else {
+      instance.addSource(id, { type: "geojson", data });
+      instance.addLayer({
+        id: `${id}-fill`,
+        type: "fill",
+        source: id,
+        paint: { "fill-color": "#006b5f", "fill-opacity": 0.08 },
+      });
+      instance.addLayer({
+        id: `${id}-line`,
+        type: "line",
+        source: id,
+        paint: {
+          "line-color": "#006b5f",
+          "line-width": 2,
+          "line-dasharray": [3, 2],
+        },
+      });
+    }
+  }, [location, radiusKm, ready]);
   useEffect(() => {
     selectedId.current = selected;
     markers.current.forEach((marker) => {
@@ -210,6 +291,7 @@ export function FacilityMap(props: {
   selected: string;
   onSelect: (id: string) => void;
   location: SearchLocation | null;
+  radiusKm: number | null;
 }) {
   return <LiveFacilityMap {...props} />;
 }

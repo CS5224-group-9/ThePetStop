@@ -2,6 +2,12 @@
 import "./facility-explorer.css";
 import { localUI } from "@/lib/data-source";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  searchLocations,
+  type LocationResult,
+} from "@/lib/api/location-services";
+import { ApiError } from "@/lib/api/client";
+import { nearbyFacilities } from "@/lib/facility-search";
 import { currentLocation, type SearchLocation } from "@/lib/location";
 import { useApp } from "./app-provider";
 import { Badge, Empty, Icon } from "./ui";
@@ -14,21 +20,33 @@ export function Directory() {
   const [type, setType] = useState("");
   const [emergency, setEmergency] = useState(false);
   const [selected, setSelected] = useState("");
-  const [view, setView] = useState("split");
   const [location, setLocation] = useState<SearchLocation | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [showLocationPrompt, setShowLocationPrompt] = useState(true);
+  const [radiusKm, setRadiusKm] = useState<number | null>(5);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [placeResults, setPlaceResults] = useState<LocationResult[]>([]);
+  const [placeSearching, setPlaceSearching] = useState(false);
+  const [placeSearched, setPlaceSearched] = useState(false);
+  const [placeError, setPlaceError] = useState("");
+  const placeRequest = useRef(0);
+  const placeController = useRef<AbortController | null>(null);
   const locationRequest = useRef(0);
   const pendingLocation = useRef(false);
   useEffect(
     () => () => {
       locationRequest.current += 1;
+      placeRequest.current += 1;
+      placeController.current?.abort();
     },
     [],
   );
   async function locate() {
     if (pendingLocation.current) return;
+    cancelPlaceSearch();
+    setSuggestionsOpen(false);
+    setQuery("");
     setShowLocationPrompt(false);
     pendingLocation.current = true;
     const request = ++locationRequest.current;
@@ -40,8 +58,8 @@ export function Directory() {
         window.isSecureContext,
       );
       if (request !== locationRequest.current) return;
+      setSelected("");
       setLocation(result);
-      setView((value) => (value === "list" ? "split" : value));
     } catch (error) {
       if (request === locationRequest.current)
         setLocationError(
@@ -54,27 +72,92 @@ export function Directory() {
       if (request === locationRequest.current) setLocating(false);
     }
   }
+  function cancelPlaceSearch() {
+    placeRequest.current += 1;
+    placeController.current?.abort();
+    setPlaceSearching(false);
+    setPlaceResults([]);
+    setPlaceSearched(false);
+    setPlaceError("");
+  }
+  async function search(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    cancelPlaceSearch();
+    setSuggestionsOpen(true);
+    if (query.trim().length < 2) return;
+    const request = ++placeRequest.current;
+    const controller = new AbortController();
+    placeController.current = controller;
+    setPlaceSearching(true);
+    try {
+      const results = await searchLocations(query, controller.signal);
+      if (request !== placeRequest.current) return;
+      setPlaceResults(results);
+      setPlaceSearched(true);
+    } catch (error) {
+      if (request !== placeRequest.current) return;
+      setPlaceError(
+        error instanceof ApiError && error.code === "not_configured"
+          ? "Address search is not available yet. You can still browse facilities or use your current location."
+          : error instanceof Error
+            ? error.message
+            : "Location search failed. Please try again.",
+      );
+    } finally {
+      if (request === placeRequest.current) setPlaceSearching(false);
+    }
+  }
+  function selectPlace(result: LocationResult) {
+    locationRequest.current += 1;
+    setLocating(false);
+    setLocationError("");
+    setSelected("");
+    setLocation(result);
+    setShowLocationPrompt(false);
+    setQuery(result.label.slice(0, 120));
+    setSuggestionsOpen(false);
+    cancelPlaceSearch();
+    document.getElementById("facility-search")?.focus();
+  }
+  function selectFacility(id: string) {
+    const match = state.facilities.find((item) => item.id === id);
+    if (!match) return;
+    locationRequest.current += 1;
+    setLocating(false);
+    setLocationError("");
+    cancelPlaceSearch();
+    setSuggestionsOpen(false);
+    setSelected(id);
+  }
+  function clearSearch() {
+    cancelPlaceSearch();
+    setSuggestionsOpen(false);
+    setQuery("");
+    setLocation(null);
+    setSelected("");
+    locationRequest.current += 1;
+    setLocating(false);
+    setLocationError("");
+  }
   const filtered = useMemo(
     () =>
-      state.facilities.filter(
-        (f) =>
-          (!type || f.type === type) &&
-          (!emergency || f.emergency) &&
-          `${f.name} ${f.area} ${f.address}`
-            .toLowerCase()
-            .includes(query.toLowerCase()),
+      nearbyFacilities(
+        state.facilities,
+        { type, emergency },
+        location,
+        radiusKm,
       ),
-    [state.facilities, type, emergency, query],
+    [state.facilities, type, emergency, location, radiusKm],
   );
   const facility = filtered.find((f) => f.id === selected);
   const source = safeExternalUrl(facility?.source_url);
   const website = safeExternalUrl(facility?.website);
   function resetFilters() {
-    setQuery("");
     setType("");
     setEmergency(false);
+    setRadiusKm(5);
   }
-  const hasFilters = Boolean(query || type || emergency);
+  const hasFilters = Boolean(type || emergency || (location && radiusKm !== 5));
   return (
     <div className="facility-explorer">
       <header className="explorer-heading">
@@ -118,30 +201,159 @@ export function Directory() {
       <ResourceState domain="facilities">
         <div className="explorer-workspace">
           <div className="explorer-controls">
-            <div className="explorer-searchbar">
-              <label className="explorer-search">
-                <Icon name="search" size={20} />
-                <input
-                  type="search"
-                  aria-label="Search facilities by name, neighbourhood or postal code"
-                  placeholder="Search facilities, neighbourhood or postal code"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="explorer-locate"
-                id="explorer-locate"
-                onClick={locate}
-                disabled={locating}
-                aria-describedby="location-status"
+            <form
+              className="explorer-unified-search"
+              onSubmit={search}
+              role="search"
+              aria-label="Find a search location"
+            >
+              <label
+                className="explorer-search-label"
+                htmlFor="facility-search"
               >
-                <Icon name="pin" size={18} />
-                {locating ? "Finding location…" : "Use my current location"}
-              </button>
-            </div>
+                Find facilities near a location
+              </label>
+              <div className="explorer-searchbar">
+                <div className="explorer-search">
+                  <Icon name="search" size={20} />
+                  <input
+                    id="facility-search"
+                    type="search"
+                    placeholder="Enter an address, landmark or postal code…"
+                    value={query}
+                    maxLength={120}
+                    required
+                    aria-describedby="search-status"
+                    aria-controls={
+                      suggestionsOpen ? "facility-search-results" : undefined
+                    }
+                    onChange={(event) => {
+                      if (!event.target.value.trim()) {
+                        clearSearch();
+                        return;
+                      }
+                      cancelPlaceSearch();
+                      setQuery(event.target.value);
+                      setSuggestionsOpen(Boolean(event.target.value.trim()));
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelPlaceSearch();
+                        setSuggestionsOpen(false);
+                      }
+                    }}
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      className="explorer-search-clear"
+                      aria-label="Clear search"
+                      onClick={() => {
+                        clearSearch();
+                        document.getElementById("facility-search")?.focus();
+                      }}
+                    >
+                      <Icon name="close" size={18} />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  className="button"
+                  disabled={placeSearching || query.trim().length < 2}
+                >
+                  {placeSearching ? "Searching…" : "Search"}
+                </button>
+                <button
+                  type="button"
+                  className="explorer-locate"
+                  id="explorer-locate"
+                  onClick={locate}
+                  disabled={locating}
+                  aria-describedby="location-status"
+                >
+                  <Icon name="pin" size={18} />
+                  {locating ? "Finding location…" : "Use my location"}
+                </button>
+              </div>
+              <p
+                className="explorer-search-status"
+                id="search-status"
+                role="status"
+              >
+                {suggestionsOpen
+                  ? placeSearching
+                    ? "Finding matching locations…"
+                    : placeSearched
+                      ? `${placeResults.length} locations found. Choose one to see nearby facilities.`
+                      : "Press Search, then choose a matching location."
+                  : location
+                    ? `Showing ${filtered.length} facilities ${radiusKm === null ? "across Singapore" : `within ${radiusKm} km`}, nearest first. Distances are straight-line.`
+                    : "Search for a location or use your current location to find facilities within a radius."}
+              </p>
+              {suggestionsOpen && (
+                <div
+                  className="explorer-search-results"
+                  id="facility-search-results"
+                >
+                  <section aria-labelledby="place-matches-heading">
+                    <h2 id="place-matches-heading">Choose a location</h2>
+                    {placeResults.length ? (
+                      <ul>
+                        {placeResults.map((result) => (
+                          <li
+                            key={`${result.label}-${result.latitude}-${result.longitude}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => selectPlace(result)}
+                            >
+                              <Icon name="pin" size={18} />
+                              <span>{result.label}</span>
+                              <Icon name="arrow" size={16} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p role={placeError ? "alert" : undefined}>
+                        {placeError ||
+                          (placeSearching
+                            ? "Searching for places…"
+                            : placeSearched
+                              ? "No places found. Try another address or postal code."
+                              : "Press Search to find matching addresses and postal codes.")}
+                      </p>
+                    )}
+                  </section>
+                </div>
+              )}
+            </form>
             <div className="explorer-filterbar">
+              <label className="explorer-radius">
+                Within
+                <select
+                  aria-label="Search radius"
+                  value={radiusKm === null ? "all" : String(radiusKm)}
+                  disabled={!location}
+                  aria-describedby="search-status"
+                  onChange={(event) =>
+                    setRadiusKm(
+                      event.target.value === "all"
+                        ? null
+                        : Number(event.target.value),
+                    )
+                  }
+                >
+                  {[1, 2, 5, 10, 20].map((km) => (
+                    <option key={km} value={km}>
+                      {km} km
+                    </option>
+                  ))}
+                  <option value="all">All Singapore</option>
+                </select>
+              </label>
               <div
                 className="explorer-scopes"
                 role="group"
@@ -171,30 +383,9 @@ export function Directory() {
                 />
                 24-hour emergency
               </label>
-              <div
-                className="explorer-views"
-                role="group"
-                aria-label="Directory layout"
-              >
-                {[
-                  ["split", "Split"],
-                  ["map", "Map"],
-                  ["list", "List"],
-                ].map(([value, label]) => (
-                  <button
-                    type="button"
-                    key={value}
-                    id={`explorer-view-${value}`}
-                    aria-pressed={view === value}
-                    onClick={() => setView(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
-          <div className="explorer-panes" data-view={view}>
+          <div className="explorer-panes">
             <section className="explorer-results" aria-label="Facility results">
               <div className="explorer-results-heading">
                 <h2 aria-live="polite">
@@ -206,7 +397,7 @@ export function Directory() {
                     Clear filters
                   </button>
                 ) : (
-                  <span>Singapore</span>
+                  <span>{location ? "Nearest first" : "Singapore"}</span>
                 )}
               </div>
               <div className="explorer-rows">
@@ -221,7 +412,7 @@ export function Directory() {
                       aria-controls={
                         facility ? "facility-detail-panel" : undefined
                       }
-                      onClick={() => setSelected(f.id)}
+                      onClick={() => selectFacility(f.id)}
                     >
                       <span
                         className={`explorer-type-icon ${f.type === "Pet shop" ? "shop" : "vet"}`}
@@ -242,6 +433,15 @@ export function Directory() {
                           )}
                         </span>
                         <strong>{f.name}</strong>
+                        {location && (
+                          <span className="explorer-distance">
+                            {f.distance_km === null
+                              ? "Distance unavailable"
+                              : f.distance_km < 1
+                                ? `${Math.round(f.distance_km * 1000)} m away`
+                                : `${f.distance_km.toFixed(1)} km away`}
+                          </span>
+                        )}
                         <span className="explorer-row-address">
                           {f.address}
                         </span>
@@ -272,7 +472,9 @@ export function Directory() {
                   ))
                 ) : (
                   <Empty title="No facilities found">
-                    Try another name or{" "}
+                    {location
+                      ? "Try a larger radius or "
+                      : "Try selecting a location or "}
                     <button
                       type="button"
                       className="text-button"
@@ -294,6 +496,7 @@ export function Directory() {
                 selected={facility?.id || ""}
                 onSelect={setSelected}
                 location={location}
+                radiusKm={radiusKm}
               />
             </section>
           </div>
@@ -307,8 +510,16 @@ export function Directory() {
               </span>
               {location && (
                 <span>
-                  <span className="explorer-location-dot" />
-                  Your location
+                  <span
+                    className={
+                      location.source === "device"
+                        ? "explorer-location-dot"
+                        : "explorer-search-pin"
+                    }
+                  />
+                  {location.source === "device"
+                    ? "Your location"
+                    : "Search centre"}
                 </span>
               )}
             </div>
@@ -317,7 +528,7 @@ export function Directory() {
                 (locating
                   ? "Waiting for your browser’s location…"
                   : location
-                    ? `Location marked${location.accuracyMetres !== undefined ? ` · accuracy approximately ${Math.max(1, Math.round(location.accuracyMetres))} m` : ""}`
+                    ? `${location.label}${location.accuracyMetres !== undefined ? ` · accuracy approximately ${Math.max(1, Math.round(location.accuracyMetres))} m` : ""}`
                     : "Select a facility to explore its details.")}
             </p>
           </div>
@@ -341,9 +552,7 @@ export function Directory() {
                   setSelected("");
                   document
                     .getElementById(
-                      view === "map"
-                        ? "explorer-view-map"
-                        : `facility-result-${encodeURIComponent(facility.id)}`,
+                      `facility-result-${encodeURIComponent(facility.id)}`,
                     )
                     ?.focus();
                 }}

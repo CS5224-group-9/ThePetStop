@@ -126,15 +126,13 @@
   background: var(--teal-soft);
   border-color: var(--teal);
 }
-.explorer-scopes,
-.explorer-views {
+.explorer-scopes {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
-.explorer-scopes button,
-.explorer-views button {
+.explorer-scopes button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -170,21 +168,6 @@
   min-height: 18px;
   flex-shrink: 0;
   accent-color: var(--teal);
-}
-.explorer-views {
-  margin-left: auto;
-  padding: 3px;
-  background: var(--group);
-  border-radius: 9px;
-}
-.explorer-views button[aria-pressed="true"] {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--control-line);
-  box-shadow: var(--shadow);
-}
-.explorer-views button:hover {
-  color: var(--teal);
 }
 .explorer-panes {
   display: grid;
@@ -347,6 +330,7 @@
   font-size: 0.8125rem;
 }
 .explorer-map-footer p {
+  overflow-wrap: anywhere;
   flex: 1 1 220px;
   margin: 0;
   text-align: right;
@@ -366,22 +350,6 @@
   height: 10px;
   border-radius: 50%;
   background: #1769e0;
-}
-.explorer-panes[data-view="map"],
-.explorer-panes[data-view="list"] {
-  grid-template-columns: minmax(0, 1fr);
-}
-.explorer-panes[data-view="map"] .explorer-results,
-.explorer-panes[data-view="list"] .explorer-map {
-  display: none;
-}
-.explorer-panes[data-view="list"] .explorer-results {
-  border-right: 0;
-  max-height: none;
-}
-.explorer-panes[data-view="list"] .explorer-rows {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
 }
 .explorer-detail {
   margin-top: 20px;
@@ -482,9 +450,6 @@
   .explorer-panes {
     grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
   }
-  .explorer-views {
-    margin-left: 0;
-  }
 }
 @media (max-width: 700px) {
   .explorer-workspace {
@@ -557,4 +522,145 @@
   .explorer-row[aria-pressed="true"] {
     outline: 3px solid Highlight;
   }
+}
+
+.explorer-search-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.explorer-unified-search {
+  margin-bottom: 16px;
+}
+.explorer-unified-search .explorer-searchbar {
+  margin-bottom: 0;
+}
+.explorer-unified-search .explorer-search {
+  flex-basis: 320px;
+  padding-right: 4px;
+}
+.explorer-search-clear {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+.explorer-search-clear:hover {
+  background: var(--group);
+}
+.explorer-search-status {
+  margin: 10px 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.explorer-search-results {
+  max-height: 24rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin-top: 12px;
+  border: 1px solid var(--control-line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.explorer-search-results section + section {
+  border-top: 1px solid var(--line);
+}
+.explorer-search-results h2 {
+  margin: 0;
+  padding: 12px 14px 8px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+.explorer-search-results section > p {
+  margin: 0;
+  padding: 4px 14px 14px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.explorer-search-results ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 6px;
+}
+.explorer-search-results button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  text-align: left;
+  background: transparent;
+  color: var(--ink);
+}
+.explorer-search-results button > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.explorer-search-results strong,
+.explorer-search-results small {
+  display: block;
+}
+.explorer-search-results strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.explorer-search-results small {
+  margin-top: 3px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.explorer-search-results button:hover {
+  background: var(--teal-soft);
+}
+.explorer-search-results button:focus-visible {
+  outline-offset: -3px;
+}
+@media (max-width: 700px) {
+  .explorer-unified-search .explorer-search {
+    flex-basis: 100%;
+  }
+  .explorer-unified-search .explorer-searchbar > button {
+    flex: 1 1 auto;
+  }
+}
+
+.explorer-radius {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.explorer-radius select {
+  width: auto;
+  min-height: 44px;
+}
+.explorer-distance {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--teal);
+}
+.searched-location-marker {
+  width: 32px;
+  height: 40px;
+  color: #006b5f;
+  filter: drop-shadow(0 2px 3px #0005);
+}
+.searched-location-marker svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.explorer-search-pin {
+  width: 10px;
+  height: 14px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--teal);
 }

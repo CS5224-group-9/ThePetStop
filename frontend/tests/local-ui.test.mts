@@ -2,6 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { currentLocation } from "../lib/location.ts";
 import {
+  filterFacilities,
+  distanceKm,
+  nearbyFacilities,
+  radiusArea,
+} from "../lib/facility-search.ts";
+import {
   localServices as service,
   seedLocalState,
 } from "../lib/api/local-services.ts";
@@ -153,4 +159,161 @@ test("local checkout validates stock, splits merchants and is idempotent", async
     first.stock - 1,
   );
   await assert.rejects(service.checkout(shipping, "empty-cart"));
+});
+
+test("unified facility search matches names, areas and addresses while preserving category filters", async () => {
+  const facilities = await service.facilities();
+  const first = facilities[0];
+  assert.ok(
+    filterFacilities(facilities, {
+      query: `  ${first.name.toUpperCase()}  `,
+      type: "",
+      emergency: false,
+    }).some((f) => f.id === first.id),
+  );
+  assert.ok(
+    filterFacilities(facilities, {
+      query: first.address,
+      type: "",
+      emergency: false,
+    }).some((f) => f.id === first.id),
+  );
+  assert.ok(
+    filterFacilities(facilities, {
+      query: first.area,
+      type: "",
+      emergency: false,
+    }).some((f) => f.id === first.id),
+  );
+  assert.ok(
+    filterFacilities(facilities, {
+      query: "",
+      type: "Pet shop",
+      emergency: false,
+    }).every((f) => f.type === "Pet shop"),
+  );
+  assert.ok(
+    filterFacilities(facilities, {
+      query: "",
+      type: "",
+      emergency: true,
+    }).every((f) => f.emergency),
+  );
+  assert.deepEqual(
+    filterFacilities(facilities, {
+      query: "no matching facility",
+      type: "",
+      emergency: false,
+    }),
+    [],
+  );
+  // Choosing a place clears the text filter; its address must not hide all pins.
+  assert.equal(
+    filterFacilities(facilities, { query: "", type: "", emergency: false })
+      .length,
+    facilities.length,
+  );
+});
+
+test("straight-line distance handles known distances and invalid coordinates", () => {
+  assert.equal(
+    distanceKm(
+      { latitude: 1.35, longitude: 103.83 },
+      { latitude: 1.35, longitude: 103.83 },
+    ),
+    0,
+  );
+  assert.ok(
+    Math.abs(
+      distanceKm(
+        { latitude: 0, longitude: 0 },
+        { latitude: 0, longitude: 1 },
+      )! - 111.195,
+    ) < 0.001,
+  );
+  assert.equal(
+    distanceKm({ latitude: NaN, longitude: 0 }, { latitude: 0, longitude: 0 }),
+    null,
+  );
+  assert.equal(
+    distanceKm({ latitude: 91, longitude: 0 }, { latitude: 0, longitude: 0 }),
+    null,
+  );
+});
+
+test("nearby facilities enforce radius boundaries, nearest order and category filters", async () => {
+  const base = (await service.facilities())[0];
+  const centre = { latitude: 1.35, longitude: 103.83 };
+  const far = {
+    ...base,
+    id: "far",
+    latitude: 1.35,
+    longitude: 104,
+    type: "Pet shop",
+    emergency: false,
+  };
+  const near = {
+    ...base,
+    id: "near",
+    latitude: 1.35,
+    longitude: 103.831,
+    type: "Veterinary centre",
+    emergency: true,
+  };
+  const missing = { ...base, id: "missing", latitude: null, longitude: null };
+  const rows = [far, missing, near];
+  assert.deepEqual(
+    nearbyFacilities(rows, { type: "", emergency: false }, centre, 1).map(
+      (f) => f.id,
+    ),
+    ["near"],
+  );
+  const edge = distanceKm(centre, {
+    latitude: near.latitude,
+    longitude: near.longitude,
+  })!;
+  assert.equal(
+    nearbyFacilities(rows, { type: "", emergency: false }, centre, edge).length,
+    1,
+  );
+  assert.equal(
+    nearbyFacilities(
+      rows,
+      { type: "", emergency: false },
+      centre,
+      edge - 0.000001,
+    ).length,
+    0,
+  );
+  assert.deepEqual(
+    nearbyFacilities(rows, { type: "", emergency: false }, centre, null).map(
+      (f) => f.id,
+    ),
+    ["near", "far", "missing"],
+  );
+  assert.equal(
+    nearbyFacilities(rows, { type: "Pet shop", emergency: false }, centre, 1)
+      .length,
+    0,
+  );
+  assert.deepEqual(
+    nearbyFacilities(rows, { type: "", emergency: true }, centre, 20)
+      .filter((f) => f.id !== "missing")
+      .map((f) => f.id),
+    ["near"],
+  );
+  assert.equal(
+    nearbyFacilities(rows, { type: "", emergency: false }, null, 1).length,
+    3,
+  );
+});
+
+test("map radius polygon is closed and follows the same distance calculation", () => {
+  const centre = { latitude: 1.35, longitude: 103.83 };
+  const ring = radiusArea(centre, 5).geometry.coordinates[0];
+  assert.deepEqual(ring[0], ring[ring.length - 1]);
+  for (const [longitude, latitude] of ring)
+    assert.ok(
+      Math.abs(distanceKm(centre, { latitude, longitude })! - 5) < 0.000001,
+    );
 });

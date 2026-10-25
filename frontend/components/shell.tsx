@@ -24,17 +24,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { state, notice, signOut, notify } = useApp();
   const active =
     path.startsWith("/cart") || path.startsWith("/checkout") ? "/shop/" : path;
-  const section = path.startsWith("/pets")
-    ? "PET PASSPORTS & HEALTH"
-    : path.startsWith("/map")
-      ? "MAP & FACILITY DISCOVERY"
-      : /shop|cart|checkout/.test(path)
-        ? "MULTI-MERCHANT MARKETPLACE"
-        : path.startsWith("/orders")
-          ? "ORDERS & FULFILMENT"
-          : path.startsWith("/merchant")
-            ? "MERCHANT WORKSPACE"
-            : "PET CARE WORKSPACE";
   const count = state.cart.reduce((sum, item) => sum + item.quantity, 0);
   const isActive = (href: string) =>
     href === "/" ? active === "/" : active.startsWith(href);
@@ -126,20 +115,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <div className="domain-ribbon">
-        <div className="domain-inner">
-          <span>
-            <span className="status-dot" />
-            {section}
-          </span>
-          <span className="domain-status">
-            <Icon name="shield" size={15} />
-            {localUI
-              ? "Sample data · Saved in this browser"
-              : "Singapore pet care"}
-          </span>
-        </div>
-      </div>
       <div className="workspace">
         <main id="main-content" tabIndex={-1}>
           {children}

@@ -286,3 +286,122 @@ test("merchant sub-orders stay separate when two merchants share a display name"
   assert.deepEqual(saved.statuses, { m1: "Processing", m2: "Shipped" });
   assert.equal(saved.items[1].merchant_id, "m2");
 });
+
+test("live location search encodes the query, normalizes results and never sends account tokens", async () => {
+  const { createLocationService } =
+    await import("../lib/api/location-services.ts");
+  const controller = new AbortController();
+  const search = createLocationService(
+    createApiClient({
+      baseUrl: origin,
+      getToken: async () => "private-account-token",
+      fetcher: async (url, init) => {
+        const parsed = new URL(String(url));
+        assert.equal(parsed.pathname, "/api/v1/locations/search/");
+        assert.equal(parsed.searchParams.get("q"), "Bishan & Ang Mo Kio");
+        assert.equal(new Headers(init?.headers).has("Authorization"), false);
+        assert.equal(init?.credentials, "omit");
+        assert.equal(init?.cache, "no-store");
+        assert.ok(init?.signal);
+        return json({
+          results: [
+            {
+              label: "BISHAN",
+              postal_code: "570001",
+              latitude: 1.35,
+              longitude: 103.83,
+            },
+          ],
+        });
+      },
+    }),
+  );
+  assert.deepEqual(await search("  Bishan & Ang Mo Kio  ", controller.signal), [
+    {
+      label: "BISHAN",
+      postal_code: "570001",
+      latitude: 1.35,
+      longitude: 103.83,
+      source: "search",
+    },
+  ]);
+});
+
+test("location search distinguishes no matches, invalid results and unavailable services", async () => {
+  const { createLocationService } =
+    await import("../lib/api/location-services.ts");
+  const searchFor = (body: unknown, status = 200) =>
+    createLocationService(
+      createApiClient({
+        baseUrl: origin,
+        fetcher: async () => json(body, status),
+      }),
+    );
+  assert.deepEqual(await searchFor({ results: [] })("nothing"), []);
+  for (const body of [
+    {},
+    { results: null },
+    {
+      results: [{ label: "bad", postal_code: null, latitude: 0, longitude: 0 }],
+    },
+    {
+      results: [
+        {
+          label: "bad",
+          latitude: "1.35",
+          longitude: 103.83,
+          postal_code: null,
+        },
+      ],
+    },
+  ]) {
+    await assert.rejects(
+      searchFor(body)("Bishan"),
+      (e: unknown) => e instanceof ApiError && e.code === "invalid_response",
+    );
+  }
+  await assert.rejects(
+    searchFor(
+      {
+        error: {
+          code: "location_search_unavailable",
+          message: "private upstream details",
+        },
+      },
+      503,
+    )("Bishan"),
+    (e: unknown) =>
+      e instanceof ApiError &&
+      e.status === 503 &&
+      !e.message.includes("private"),
+  );
+  await assert.rejects(
+    createLocationService(createApiClient({}))("Bishan"),
+    (e: unknown) => e instanceof ApiError && e.code === "not_configured",
+  );
+});
+
+test("location search honours cancellation instead of showing stale results", async () => {
+  const { createLocationService } =
+    await import("../lib/api/location-services.ts");
+  const controller = new AbortController();
+  const search = createLocationService(
+    createApiClient({
+      baseUrl: origin,
+      fetcher: async (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("cancelled", "AbortError")),
+            { once: true },
+          );
+        }),
+    }),
+  );
+  const pending = search("Bishan", controller.signal);
+  controller.abort();
+  await assert.rejects(
+    pending,
+    (e: unknown) => e instanceof DOMException && e.name === "AbortError",
+  );
+});
