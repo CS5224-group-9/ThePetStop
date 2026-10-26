@@ -1,0 +1,22 @@
+services:
+  db:
+    networks:
+      - default
+      - ingestion
+
+  floci:
+    image: floci/floci:latest
+    profiles: [ingestion]
+    ports:
+      - "4566:4566"
+    environment:
+      FLOCI_HOSTNAME: floci
+      FLOCI_SERVICES_LAMBDA_DOCKER_NETWORK: petstop-ingestion
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ingestion
+
+networks:
+  ingestion:
+    name: petstop-ingestion

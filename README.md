@@ -24,6 +24,36 @@ Database, from the repository root (needs Docker Desktop running):
 docker compose up -d
 ```
 
+To run Floci with PostgreSQL for local facility-ingestion work, include the
+optional Compose overlay:
+
+```powershell
+docker compose -f docker-compose.yml -f compose.ingestion.yml --profile ingestion up -d db floci
+docker compose -f docker-compose.yml -f compose.ingestion.yml --profile ingestion ps
+```
+
+If Floci is already running from this Compose setup, you can reuse it; the
+`up` command leaves the running services in place. Don’t start a second Floci
+instance on port 4566.
+
+Host tools such as the AWS CLI connect through `localhost:4566`. For example,
+set local-only credentials in the PowerShell session and list Floci's S3
+buckets:
+
+```powershell
+$env:AWS_ACCESS_KEY_ID = "test"
+$env:AWS_SECRET_ACCESS_KEY = "test"
+$env:AWS_DEFAULT_REGION = "ap-southeast-1"
+aws --endpoint-url http://localhost:4566 s3api list-buckets
+```
+
+Inside Floci-launched Lambda containers, use `http://floci:4566` for AWS API
+calls and `db:5432` for PostgreSQL. `localhost` inside a Lambda container points
+back to that container. The overlay puts Floci and PostgreSQL on the shared
+`petstop-ingestion` network and tells Floci to attach Lambda containers there.
+The ingestion handlers, fixture server and resource bootstrap are still
+planned, so this starts the network services only.
+
 Backend, from `backend/`. The first time, create `.env` as described in [backend/README.md](backend/README.md#environment-variables).
 
 ```powershell
