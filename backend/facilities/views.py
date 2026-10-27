@@ -4,12 +4,26 @@ from rest_framework.decorators import (
     permission_classes,
     throttle_classes,
 )
+from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
+from .models import Facility
 from .onemap import client
-from .serializers import LocationSearchQuerySerializer
+from .serializers import FacilitySerializer, LocationSearchQuerySerializer
+
+
+class FacilityListView(ListAPIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    serializer_class = FacilitySerializer
+    queryset = Facility.objects.filter(active=True).order_by("name", "id")
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class LocationSearchThrottle(SimpleRateThrottle):

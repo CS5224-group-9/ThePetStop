@@ -3,9 +3,11 @@ import time
 from unittest.mock import patch
 
 from django.core.cache import cache
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
+from .models import Facility, FacilitySyncRun
 from .onemap import (
     OneMapClient,
     SearchFailed,
@@ -178,6 +180,58 @@ class OneMapTests(SimpleTestCase):
             response.status, response.read.return_value = status, payload
             with self.assertRaises(exception):
                 _request_json("/test")
+
+
+class FacilityListViewTests(TestCase):
+    def setUp(self):
+        run = FacilitySyncRun.objects.create(source="vet")
+        self.facility = Facility.objects.create(
+            source_id="vet",
+            source_key="test-vet",
+            facility_type="vet",
+            name="Bishan Veterinary Centre",
+            address="1 Bishan Street",
+            postal_code="570001",
+            latitude="1.350000",
+            longitude="103.840000",
+            source="AVS",
+            source_url="https://example.test/registry",
+            source_document_url="https://example.test/registry.pdf",
+            last_checked_at=timezone.now(),
+            active=True,
+            last_seen_run=run,
+        )
+        Facility.objects.create(
+            source_id="pet_shop",
+            source_key="inactive-shop",
+            facility_type="pet_shop",
+            name="Inactive Shop",
+            address="2 Bishan Street",
+            postal_code="570002",
+            source="AVS",
+            source_url="https://example.test/registry",
+            source_document_url="https://example.test/registry.pdf",
+            last_checked_at=timezone.now(),
+            active=False,
+            last_seen_run=run,
+        )
+
+    def test_public_list_returns_active_registry_rows_and_no_store(self):
+        response = APIClient().get(
+            "/api/v1/facilities/", HTTP_AUTHORIZATION="Bearer invalid"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(response.json()["count"], 1)
+        row = response.json()["results"][0]
+        self.assertEqual(row["id"], str(self.facility.id))
+        self.assertEqual(row["facility_type"], "vet")
+        self.assertEqual(row["latitude"], "1.350000")
+        self.assertEqual(row["verification_status"], "verified")
+        self.assertNotIn("email", row)
+
+    def test_list_is_read_only(self):
+        self.assertEqual(APIClient().post("/api/v1/facilities/").status_code, 405)
 
 
 class LocationSearchViewTests(SimpleTestCase):
