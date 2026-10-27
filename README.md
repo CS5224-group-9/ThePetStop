@@ -54,6 +54,35 @@ back to that container. The overlay puts Floci and PostgreSQL on the shared
 The ingestion handlers, fixture server and resource bootstrap are still
 planned, so this starts the network services only.
 
+### Check the Floci Lambda network
+
+With `db` and `floci` running on `petstop-ingestion`, deploy and invoke the
+small probe Lambda:
+
+```powershell
+uv run --project backend python scripts/facilities/probe_floci.py
+```
+
+It should print `reachable: true` for both Floci and PostgreSQL. The probe only
+uses the local Floci endpoint and test credentials. It creates or updates the
+local `petstop-floci-network-probe` function and role, so rerunning the command
+reuses them. If either check fails, confirm the Compose network with
+`docker network inspect petstop-ingestion` and review Floci's logs before
+starting the ingestion pipeline.
+
+To check event delivery too, run:
+
+```powershell
+uv run --project backend python scripts/facilities/probe_floci_events.py
+```
+
+This provisions a local FIFO queue, test bucket, SQS event-source mapping and
+an S3 notification for objects under `ready/`. It sends one queue message and
+uploads one ready object, then waits for receipt objects written by the Lambda.
+Success prints receipts for both `sqs` and `s3`, each showing Floci and
+PostgreSQL as reachable. The probe resources remain in Floci for inspection or
+reruns. Receipt objects go under `receipts/`, outside the notification filter.
+
 Backend, from `backend/`. The first time, create `.env` as described in [backend/README.md](backend/README.md#environment-variables).
 
 ```powershell
