@@ -1,5 +1,5 @@
-import hashlib
 import json
+import logging
 import os
 import re
 from decimal import Decimal, InvalidOperation
@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone as django_timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
+from facilities.ingestion import status as run_status
 from facilities.ingestion.aws import client as aws_client
 from facilities.models import (
     Facility,
@@ -32,12 +33,14 @@ class SnapshotValidationError(ValueError):
     pass
 
 
+class SnapshotReviewRequired(SnapshotValidationError):
+    pass
+
+
 def _digest(snapshot):
     content = dict(snapshot)
     supplied = content.pop("snapshot_sha256", None)
-    actual = hashlib.sha256(
-        json.dumps(content, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
+    actual = run_status.digest(content)
     if not isinstance(supplied, str) or supplied != actual:
         raise SnapshotValidationError("Snapshot digest is invalid")
 
@@ -182,10 +185,8 @@ def _validate_snapshot(snapshot):
                 "Snapshot geocode status and coordinates conflict"
             )
 
-        licence_no = record.get("licence_no") or None
-        if licence_no is not None and (
-            not isinstance(licence_no, str) or len(licence_no) > 32
-        ):
+        licence_no = record.get("licence_no") or ""
+        if licence_no and (not isinstance(licence_no, str) or len(licence_no) > 32):
             raise SnapshotValidationError("Snapshot licence number is invalid")
         phone = record.get("phone") or ""
         email = record.get("email") or ""
@@ -261,15 +262,32 @@ def _record_failure(snapshot, code):
             FacilitySyncRun.Status.SUPERSEDED,
         }:
             return
-        run.status = FacilitySyncRun.Status.FAILED
+        run.status = (
+            FacilitySyncRun.Status.REVIEW_REQUIRED
+            if code == "count_drop"
+            else FacilitySyncRun.Status.FAILED
+        )
+        run.stage = "loading"
+        run.last_activity_at = now
         run.finished_at = now
         run.error_code = code
         run.error_message = "Snapshot was rejected or could not be applied."
-        run.save(update_fields=["status", "finished_at", "error_code", "error_message"])
+        run.save(
+            update_fields=[
+                "status",
+                "stage",
+                "last_activity_at",
+                "finished_at",
+                "error_code",
+                "error_message",
+            ]
+        )
         _event(run, "load_failed", {"error_code": code})
 
 
-def _apply_snapshot(run_id, source, checked_at, published_at, records, snapshot):
+def _apply_snapshot(
+    run_id, source, checked_at, published_at, records, snapshot, *, approve_drop=False
+):
     now = django_timezone.now()
     with transaction.atomic():
         state, _ = FacilitySourceState.objects.get_or_create(source=source)
@@ -315,6 +333,19 @@ def _apply_snapshot(run_id, source, checked_at, published_at, records, snapshot)
                 {"document_sha256": snapshot["document_sha256"]},
             )
             return {"run_id": str(run_id), "status": run.status}
+
+        threshold = float(os.environ.get("FACILITY_MAX_DEACTIVATION_FRACTION", "0.2"))
+        if not 0 < threshold <= 1:
+            raise SnapshotValidationError("Deactivation threshold must be in (0, 1]")
+        existing = Facility.objects.filter(source_id=source, active=True)
+        count = existing.count()
+        removed = existing.exclude(
+            source_key__in=[record["source_key"] for record in records]
+        ).count()
+        if count and removed / count > threshold and not approve_drop:
+            raise SnapshotReviewRequired(
+                "Snapshot would deactivate too many facilities; staff review is required"
+            )
 
         run.status = FacilitySyncRun.Status.RUNNING
         run.started_at = checked_at
@@ -385,6 +416,8 @@ def _apply_snapshot(run_id, source, checked_at, published_at, records, snapshot)
         )
         unlocated = snapshot["unlocated_count"]
         run.status = FacilitySyncRun.Status.SUCCEEDED
+        run.stage = "complete"
+        run.last_activity_at = now
         run.finished_at = now
         run.inserted_count = inserted
         run.updated_count = updated
@@ -394,6 +427,8 @@ def _apply_snapshot(run_id, source, checked_at, published_at, records, snapshot)
         run.save(
             update_fields=[
                 "status",
+                "stage",
+                "last_activity_at",
                 "finished_at",
                 "inserted_count",
                 "updated_count",
@@ -429,16 +464,24 @@ def _apply_snapshot(run_id, source, checked_at, published_at, records, snapshot)
         }
 
 
-def load_snapshot(snapshot):
+def load_snapshot(snapshot, *, approve_drop=False):
     try:
         validated = _validate_snapshot(snapshot)
-    except SnapshotValidationError:
-        _record_failure(snapshot, "invalid_snapshot")
-        raise
-    try:
-        return _apply_snapshot(*validated)
-    except Exception:
-        _record_failure(snapshot, "load_failed")
+        return _apply_snapshot(*validated, approve_drop=approve_drop)
+    except Exception as error:
+        code = (
+            "count_drop"
+            if isinstance(error, SnapshotReviewRequired)
+            else "invalid_snapshot"
+            if isinstance(error, SnapshotValidationError)
+            else "load_failed"
+        )
+        try:
+            _record_failure(snapshot, code)
+        except Exception:
+            logging.getLogger(__name__).error(
+                "Could not record load failure in database", extra={"error_code": code}
+            )
         raise
 
 
@@ -459,6 +502,34 @@ def load_s3_event(event, s3_client=None):
         obj = record.get("s3", {}).get("object", {})
         key = unquote_plus(obj.get("key", ""))
         parts = key.split("/")
+        if bucket_name == bucket and len(parts) == 4 and parts[0] == "status":
+            try:
+                status_event = run_status.read_json(s3_client, bucket, key)
+                if (
+                    not isinstance(status_event, dict)
+                    or parts[1] != status_event.get("source")
+                    or parts[2] != status_event.get("run_id")
+                    or parts[3] != f"{status_event.get('event_id')}.json"
+                ):
+                    raise SnapshotValidationError(
+                        "Status event key and content do not match"
+                    )
+                run_status.project(status_event)
+            except (ValueError, KeyError, TypeError):
+                run_status.put_json(
+                    s3_client,
+                    bucket,
+                    f"quarantine/status/{parts[1]}/{parts[2]}/{parts[3]}",
+                    {"key": key, "error_code": "invalid_status_event"},
+                )
+                run_status.metric("QuarantinedMessages", 1)
+            run_status.put_json(
+                s3_client,
+                bucket,
+                f"projected/{parts[1]}/{parts[2]}/{parts[3]}",
+                {"projected": True},
+            )
+            continue
         if bucket_name != bucket or len(parts) != 3 or parts[0] != "ready":
             raise SnapshotValidationError(
                 "Event does not identify a ready snapshot in the configured bucket"
@@ -485,5 +556,51 @@ def load_s3_event(event, s3_client=None):
         )
         if snapshot.get("source") != source or snapshot.get("run_id") != run_id:
             raise SnapshotValidationError("S3 event and snapshot identity do not match")
-        results.append(load_snapshot(snapshot))
+        approval = run_status.read_json(
+            s3_client, bucket, f"approvals/{source}/{run_id}.json"
+        )
+        try:
+            result = load_snapshot(
+                snapshot,
+                approve_drop=bool(
+                    approval
+                    and approval.get("snapshot_sha256")
+                    == snapshot.get("snapshot_sha256")
+                ),
+            )
+        except SnapshotReviewRequired:
+            run_status.fail(
+                s3_client,
+                bucket,
+                source,
+                run_id,
+                "loading",
+                "count_drop",
+                permanent=True,
+            )
+            results.append({"run_id": run_id, "status": "review_required"})
+            continue
+        except Exception as error:
+            try:
+                run_status.fail(
+                    s3_client,
+                    bucket,
+                    source,
+                    run_id,
+                    "loading",
+                    type(error).__name__,
+                    permanent=isinstance(error, SnapshotValidationError),
+                )
+            except Exception:
+                logging.getLogger(__name__).error(
+                    "Could not persist load failure to S3"
+                )
+            raise
+        run_status.put_json(
+            s3_client,
+            bucket,
+            f"loaded/{source}/{run_id}.json",
+            {**result, "checked_at": snapshot["checked_at"]},
+        )
+        results.append(result)
     return {"loaded_snapshots": len(results), "results": results}

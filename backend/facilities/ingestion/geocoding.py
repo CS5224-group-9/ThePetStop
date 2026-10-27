@@ -7,10 +7,11 @@ import secrets
 import time
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from http.client import HTTPException, HTTPSConnection
-from urllib.parse import urlencode
+from http.client import HTTPConnection, HTTPException, HTTPSConnection
+from urllib.parse import urlencode, urlparse
 from uuid import UUID
 
+from facilities.ingestion import status as run_status
 from facilities.ingestion.aws import client as aws_client
 from facilities.ingestion.finalize import finalize_if_complete
 
@@ -59,21 +60,38 @@ def _put_json(s3, bucket, key, value):
     )
 
 
-def _token_value(force_refresh=False):
+def _credentials():
+    if arn := os.environ.get("ONEMAP_SECRET_ARN"):
+        value = json.loads(
+            aws_client("secretsmanager").get_secret_value(SecretId=arn)["SecretString"]
+        )
+        return (
+            value.get("access_token", ""),
+            value.get("email", ""),
+            value.get("password", ""),
+        )
+    return (
+        os.environ.get("ONEMAP_ACCESS_TOKEN", ""),
+        os.environ.get("ONEMAP_EMAIL", ""),
+        os.environ.get("ONEMAP_PASSWORD", ""),
+    )
+
+
+def _token_value(force_refresh=False, before_request=lambda: None):
     global _token
     if _token and not force_refresh:
         return _token
-    supplied = os.environ.get("ONEMAP_ACCESS_TOKEN", "").strip()
+    supplied, email, password = _credentials()
+    supplied = supplied.strip()
     if supplied and not force_refresh:
         _token = supplied
         return _token
-    email = os.environ.get("ONEMAP_EMAIL", "").strip()
-    password = os.environ.get("ONEMAP_PASSWORD", "")
     if not email or not password:
         raise GeocoderConfigurationError(
             "Configure OneMap token or account credentials"
         )
     try:
+        before_request()
         payload = _request(
             "/api/auth/post/getToken",
             method="POST",
@@ -85,7 +103,7 @@ def _token_value(force_refresh=False):
         ) from error
     except _UpstreamError as error:
         if error.status == 429 or error.status >= 500:
-            raise RetryableGeocodeError(str(error)) from error
+            raise
         raise GeocoderConfigurationError("OneMap token request was rejected") from error
     access_token = payload.get("access_token")
     expiry = payload.get("expiry_timestamp")
@@ -110,7 +128,18 @@ def _request(path, *, method="GET", token=None, body=None):
     if body is not None:
         headers["Content-Type"] = "application/json"
         data = json.dumps(body).encode("utf-8")
-    connection = HTTPSConnection("www.onemap.gov.sg", timeout=8)
+    if os.environ.get("FACILITY_FIXTURE_MODE", "").lower() == "true":
+        base = urlparse(os.environ["ONEMAP_FIXTURE_URL"])
+        if (
+            base.scheme != "http"
+            or base.hostname not in {"fixtures", "localhost", "127.0.0.1"}
+            or base.username
+            or base.password
+        ):
+            raise GeocoderConfigurationError("Invalid local OneMap fixture URL")
+        connection = HTTPConnection(base.hostname, base.port, timeout=8)
+    else:
+        connection = HTTPSConnection("www.onemap.gov.sg", timeout=8)
     try:
         connection.request(method, path, body=data, headers=headers)
         response = connection.getresponse()
@@ -146,7 +175,7 @@ def _search(query, before_request):
             "pageNum": 1,
         }
     )
-    token = _token_value()
+    token = _token_value(before_request=before_request)
     for attempt in range(2):
         try:
             before_request()
@@ -162,7 +191,7 @@ def _search(query, before_request):
                 raise GeocoderConfigurationError(
                     "OneMap rejected the refreshed token"
                 ) from None
-            token = _token_value(force_refresh=True)
+            token = _token_value(force_refresh=True, before_request=before_request)
     raise GeocoderConfigurationError("OneMap authentication failed")
 
 
@@ -305,8 +334,16 @@ def _result_for_query(s3, bucket, query, context, receive_count):
     cache_key = f"cache/geocoding/{query_id}.json"
     try:
         cached = _read_json(s3, bucket, cache_key)
+        try:
+            cache_time = datetime.fromisoformat(cached.get("geocoded_at", ""))
+            cache_age = (datetime.now(UTC) - cache_time).total_seconds()
+            max_age = float(os.environ.get("GEOCODE_CACHE_MAX_AGE_DAYS", "90")) * 86400
+            fresh = max_age > 0 and 0 <= cache_age <= max_age
+        except (TypeError, ValueError):
+            fresh = False
         if (
-            cached.get("schema_version") == 1
+            fresh
+            and cached.get("schema_version") == 1
             and cached.get("query_id") == query_id
             and cached.get("postal_code") == postal_code
             and cached.get("status") == "resolved"
@@ -463,6 +500,18 @@ def process_batch(message, s3, context=None, receive_count=1):
             and complete.get("run_id") == run_id
             and complete.get("completed_query_ids") == query_ids
         ):
+            run_status.emit(
+                s3,
+                bucket,
+                source,
+                run_id,
+                "geocoding",
+                "batch_completed",
+                detail={"batch_id": batch_id},
+                event_id=run_status.stable_event_id(
+                    run_id, f"batch_completed:{batch_id}"
+                ),
+            )
             ready_key = finalize_if_complete(
                 s3, bucket, source, run_id, message["manifest_key"]
             )
@@ -491,6 +540,16 @@ def process_batch(message, s3, context=None, receive_count=1):
         "completed_at": datetime.now(UTC).isoformat(),
     }
     _put_json(s3, bucket, complete_key, complete)
+    run_status.emit(
+        s3,
+        bucket,
+        source,
+        run_id,
+        "geocoding",
+        "batch_completed",
+        detail={"batch_id": batch_id},
+        event_id=run_status.stable_event_id(run_id, f"batch_completed:{batch_id}"),
+    )
     ready_key = finalize_if_complete(
         s3, bucket, source, run_id, message["manifest_key"]
     )
@@ -509,12 +568,69 @@ def handler(event, context):
         raise GeocodeError("Expected an SQS event with at least one record")
     results = []
     for record in records:
+        message = None
         try:
             message = json.loads(record["body"])
             receive_count = int(
                 record.get("attributes", {}).get("ApproximateReceiveCount", "1")
             )
+            if run_status.read_json(
+                s3, bucket, f"failed/{message['source']}/{message['run_id']}.json"
+            ):
+                results.append({"run_id": message["run_id"], "status": "failed"})
+                continue
             results.append(process_batch(message, s3, context, receive_count))
-        except (KeyError, TypeError, ValueError) as error:
-            raise GeocodeError("Invalid SQS geocoding record") from error
+        except Exception as error:
+            receive_count = int(
+                record.get("attributes", {}).get("ApproximateReceiveCount", "1")
+            )
+            permanent = isinstance(
+                error, (GeocodeError, ValueError, KeyError, TypeError)
+            ) and not isinstance(error, RetryableGeocodeError)
+            if permanent:
+                run_status.put_json(
+                    s3,
+                    bucket,
+                    f"quarantine/{record.get('messageId', 'unknown')}.json",
+                    {
+                        "body": record.get("body", ""),
+                        "error_code": type(error).__name__,
+                    },
+                )
+                run_status.metric("QuarantinedMessages", 1)
+            try:
+                if isinstance(message, dict):
+                    source, run_id = run_status.identity(
+                        message.get("source"), message.get("run_id")
+                    )
+                    run_status.fail(
+                        s3,
+                        bucket,
+                        source,
+                        run_id,
+                        "geocoding",
+                        type(error).__name__,
+                        permanent=permanent or receive_count >= 5,
+                        batch_id=message.get("batch_id"),
+                    )
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).error("Could not persist geocoding failure")
+                raise
+            if permanent:
+                results.append({"status": "quarantined"})
+                continue
+            if record.get("receiptHandle") and os.environ.get("GEOCODE_QUEUE_URL"):
+                state = _load_rate_state(s3, bucket)
+                delay = max(
+                    _retry_after_seconds(None, receive_count),
+                    int(float(state.get("cooldown_until", 0)) - time.time()) + 1,
+                )
+                aws_client("sqs").change_message_visibility(
+                    QueueUrl=os.environ["GEOCODE_QUEUE_URL"],
+                    ReceiptHandle=record["receiptHandle"],
+                    VisibilityTimeout=min(43200, max(1, delay)),
+                )
+            raise
     return {"processed_batches": len(results), "results": results}

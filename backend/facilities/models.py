@@ -16,12 +16,18 @@ class FacilitySyncRun(models.Model):
         SUCCEEDED = "succeeded", "Succeeded"
         FAILED = "failed", "Failed"
         SUPERSEDED = "superseded", "Superseded"
+        REVIEW_REQUIRED = "review_required", "Review required"
 
     run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source = models.CharField(max_length=16, choices=FacilitySource.choices)
     status = models.CharField(
-        max_length=12, choices=Status.choices, default=Status.RUNNING
+        max_length=16, choices=Status.choices, default=Status.RUNNING
     )
+    stage = models.CharField(max_length=24, default="fetching")
+    last_activity_at = models.DateTimeField(null=True, blank=True)
+    expected_batch_count = models.PositiveIntegerField(default=0)
+    completed_batch_count = models.PositiveIntegerField(default=0)
+    retry_count = models.PositiveIntegerField(default=0)
     started_at = models.DateTimeField(default=timezone.now)
     finished_at = models.DateTimeField(null=True, blank=True)
     registry_url = models.URLField(max_length=1000, blank=True)
@@ -38,13 +44,6 @@ class FacilitySyncRun(models.Model):
     error_message = models.TextField(blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["source"],
-                condition=Q(status="running"),
-                name="fac_sync_one_running_source",
-            )
-        ]
         ordering = ["-started_at"]
 
     def __str__(self):
@@ -106,7 +105,7 @@ class Facility(models.Model):
     source_key = models.CharField(max_length=64)
     facility_type = models.CharField(max_length=16, choices=Type.choices)
     name = models.CharField(max_length=240)
-    licence_no = models.CharField(max_length=32, null=True, blank=True)
+    licence_no = models.CharField(max_length=32, blank=True, default="")
     address = models.TextField()
     postal_code = models.CharField(max_length=6)
     latitude = models.DecimalField(
@@ -153,7 +152,9 @@ class Facility(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=["active", "facility_type"], name="fac_active_type_idx"),
+            models.Index(
+                fields=["active", "facility_type"], name="fac_active_type_idx"
+            ),
             models.Index(fields=["postal_code"], name="fac_postal_idx"),
             models.Index(fields=["latitude", "longitude"], name="fac_coords_idx"),
         ]

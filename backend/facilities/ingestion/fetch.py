@@ -1,12 +1,15 @@
 import hashlib
 import json
 import os
+import secrets
+import time
 import uuid
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
 from urllib.parse import quote, urljoin, urlparse
 
+from facilities.ingestion import status
 from facilities.ingestion.aws import client as aws_client
 from facilities.ingestion.dispatch import (
     batch_size_from_environment,
@@ -14,7 +17,7 @@ from facilities.ingestion.dispatch import (
     dispatch_batches,
     resume_dispatch,
 )
-from facilities.ingestion.parsers import parse_registry_pdf
+from facilities.ingestion.parsers import RegistryParseError, parse_registry_pdf
 
 DEFAULT_SOURCES = {
     "vet": "https://avs.nparks.gov.sg/outreach/resources/public-registry-of-avs-licensed-veterinary-centres/",
@@ -27,6 +30,12 @@ TIMEOUT_SECONDS = 15
 
 class RegistryFetchError(ValueError):
     pass
+
+
+class RetryableRegistryFetchError(RegistryFetchError):
+    def __init__(self, message, retry_after=0):
+        self.retry_after = retry_after
+        super().__init__(message)
 
 
 def _allowed_hosts():
@@ -46,7 +55,12 @@ def _validate_url(url, allowed_hosts):
     fixture_mode = os.environ.get("FACILITY_FIXTURE_MODE", "").lower() == "true"
     if fixture_mode:
         allowed_schemes.add("http")
-    if parsed.scheme not in allowed_schemes or parsed.hostname not in allowed_hosts:
+    if (
+        parsed.scheme not in allowed_schemes
+        or parsed.hostname not in allowed_hosts
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
         raise RegistryFetchError("Registry URL is outside the configured source hosts")
     if not fixture_mode and port not in {None, 443}:
         raise RegistryFetchError("Registry URL uses a nonstandard port")
@@ -79,7 +93,7 @@ class _Links(HTMLParser):
 
 def _open(url, allowed_hosts):
     current_url = _validate_url(url, allowed_hosts)
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             for _ in range(4):
                 parsed = urlparse(current_url)
@@ -110,7 +124,19 @@ def _open(url, allowed_hosts):
                         )
                         continue
                     if response.status != 200:
-                        if response.status >= 500 and attempt == 0:
+                        if response.status == 429 or response.status >= 500:
+                            delay = response.getheader("Retry-After")
+                            from facilities.ingestion.geocoding import (
+                                _retry_after_seconds,
+                            )
+
+                            seconds = _retry_after_seconds(delay, attempt + 1)
+                            if attempt == 2 or seconds > 30:
+                                raise RetryableRegistryFetchError(
+                                    f"Registry temporarily unavailable (HTTP {response.status})",
+                                    retry_after=seconds,
+                                )
+                            time.sleep(seconds)
                             break
                         raise RegistryFetchError(
                             f"Registry returned HTTP {response.status}"
@@ -126,13 +152,14 @@ def _open(url, allowed_hosts):
             else:
                 raise RegistryFetchError("Registry redirected too many times")
         except (OSError, HTTPException, TimeoutError) as error:
-            if attempt:
+            if attempt == 2:
                 host = urlparse(current_url).hostname
-                raise RegistryFetchError(
+                raise RetryableRegistryFetchError(
                     f"Registry request to {host} failed after retry "
                     f"({type(error).__name__})"
                 ) from error
-    raise RegistryFetchError("Registry request failed after retry")
+            time.sleep(2**attempt + secrets.randbelow(1000) / 1000)
+    raise RetryableRegistryFetchError("Registry request failed after retry")
 
 
 def _source_config():
@@ -177,6 +204,30 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
         raise RegistryFetchError(
             "Configure FACILITY_SYNC_BUCKET and a FIFO GEOCODE_QUEUE_URL"
         )
+    run_id = str(uuid.UUID(run_id)) if run_id else str(uuid.uuid4())
+    if s3_client is None:
+        s3_client = aws_client("s3")
+    manifest_key = f"pending/{source}/{run_id}/manifest.json"
+    manifest = status.read_json(s3_client, bucket, manifest_key)
+    if manifest is not None:
+        result = resume_dispatch(
+            s3_client,
+            sqs_client or aws_client("sqs"),
+            queue_url,
+            bucket,
+            source,
+            run_id,
+        )
+        status.emit(
+            s3_client,
+            bucket,
+            source,
+            run_id,
+            "queued",
+            "dispatched",
+            detail={"batch_count": len(manifest["expected_batch_ids"])},
+        )
+        return result
     try:
         batch_size = batch_size_from_environment()
     except ValueError as error:
@@ -194,27 +245,8 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
     if not pdf.startswith(b"%PDF-"):
         raise RegistryFetchError("AVS registry download is not a PDF")
 
-    run_id = str(uuid.UUID(run_id)) if run_id else str(uuid.uuid4())
     sha256 = hashlib.sha256(pdf).hexdigest()
-    if s3_client is None:
-        s3_client = aws_client("s3")
     prefix = f"runs/{source}/{run_id}"
-    manifest_key = f"pending/{source}/{run_id}/manifest.json"
-    try:
-        existing_manifest = json.loads(
-            s3_client.get_object(Bucket=bucket, Key=manifest_key)["Body"].read()
-        )
-    except s3_client.exceptions.NoSuchKey:
-        existing_manifest = None
-    if existing_manifest is not None:
-        if existing_manifest.get("document_sha256") != sha256:
-            raise RegistryFetchError(
-                "A run ID cannot be reused for a different registry PDF"
-            )
-        if sqs_client is None:
-            sqs_client = aws_client("sqs")
-        return resume_dispatch(s3_client, sqs_client, queue_url, bucket, source, run_id)
-
     raw_key = f"raw/{source}/{sha256}.pdf"
     s3_client.put_object(
         Bucket=bucket,
@@ -224,6 +256,7 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
         Metadata={"sha256": sha256},
     )
 
+    status.emit(s3_client, bucket, source, run_id, "parsing", "pdf_downloaded")
     records = parse_registry_pdf(pdf, source)
     retrieved_at = datetime.now(UTC).isoformat()
     batches, batch_keys, batch_versions = create_batch_artifacts(
@@ -265,6 +298,15 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
         batch_keys,
         batch_versions,
     )
+    status.emit(
+        s3_client,
+        bucket,
+        source,
+        run_id,
+        "queued",
+        "dispatched",
+        detail={"parsed_count": len(records), "batch_count": len(batches)},
+    )
     return {
         "run_id": run_id,
         "source": source,
@@ -275,6 +317,7 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
     }
 
 
+@status.serialized
 def handler(event, context):
     operation = event.get("operation")
     source = event.get("source", "")
@@ -297,4 +340,45 @@ def handler(event, context):
         except ValueError as error:
             raise RegistryFetchError("dispatch requires a valid run_id") from error
         return resume_dispatch(s3, sqs, queue_url, bucket, source, run_id)
-    return fetch_registry(source, event.get("run_id"), s3, sqs)
+    run_id = event["run_id"]
+    status.begin(s3, bucket, source, run_id)
+    if status.read_json(s3, bucket, f"failed/{source}/{run_id}.json"):
+        raise RegistryFetchError(
+            "Run is terminal; start a new run after correcting its failure"
+        )
+    try:
+        cooldown = status.read_json(s3, bucket, f"deferred/{source}/{run_id}.json")
+        if cooldown and cooldown["until"] > time.time():
+            raise RetryableRegistryFetchError(
+                "Registry is in Retry-After cooldown",
+                retry_after=cooldown["until"] - time.time(),
+            )
+        return fetch_registry(source, run_id, s3, sqs)
+    except Exception as error:
+        permanent = isinstance(
+            error, (RegistryFetchError, RegistryParseError, ValueError)
+        ) and not isinstance(error, RetryableRegistryFetchError)
+        try:
+            if isinstance(error, RetryableRegistryFetchError) and error.retry_after:
+                status.put_json(
+                    s3,
+                    bucket,
+                    f"deferred/{source}/{run_id}.json",
+                    {"until": time.time() + error.retry_after},
+                )
+            status.fail(
+                s3,
+                bucket,
+                source,
+                run_id,
+                "fetching",
+                type(error).__name__,
+                permanent=permanent,
+            )
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "Could not persist ingestion failure", extra={"run_id": run_id}
+            )
+        raise

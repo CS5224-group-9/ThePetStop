@@ -1,7 +1,8 @@
-import hashlib
 import json
 import re
 from datetime import UTC, datetime
+
+from facilities.ingestion.status import create_json, digest
 
 
 class SnapshotError(ValueError):
@@ -13,15 +14,6 @@ def _read_json(s3, bucket, key, version=None):
     if version:
         params["VersionId"] = version
     return json.loads(s3.get_object(**params)["Body"].read())
-
-
-def _put_json(s3, bucket, key, value):
-    return s3.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=json.dumps(value, separators=(",", ":")).encode("utf-8"),
-        ContentType="application/json",
-    )
 
 
 def finalize_if_complete(s3, bucket, source, run_id, manifest_key):
@@ -47,9 +39,7 @@ def finalize_if_complete(s3, bucket, source, run_id, manifest_key):
         existing_digest = existing.get("snapshot_sha256")
         content = dict(existing)
         content.pop("snapshot_sha256", None)
-        actual_digest = hashlib.sha256(
-            json.dumps(content, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
+        actual_digest = digest(content)
         if (
             existing.get("run_id") != run_id
             or existing.get("source") != source
@@ -201,8 +191,7 @@ def finalize_if_complete(s3, bucket, source, run_id, manifest_key):
     }
     if snapshot["document_sha256"] != manifest.get("document_sha256"):
         raise SnapshotError("Parsed PDF hash does not match the run manifest")
-    snapshot["snapshot_sha256"] = hashlib.sha256(
-        json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    _put_json(s3, bucket, ready_key, snapshot)
+    snapshot["snapshot_sha256"] = digest(snapshot)
+    if not create_json(s3, bucket, ready_key, snapshot):
+        return finalize_if_complete(s3, bucket, source, run_id, manifest_key)
     return ready_key

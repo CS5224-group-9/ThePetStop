@@ -21,3 +21,15 @@ def load(event, context):
     from facilities.ingestion.loading import load_s3_event
 
     return load_s3_event(event)
+
+
+def reconcile(event, context):
+    from facilities.ingestion.recovery import handler
+
+    return handler(event, context)
+
+
+def failure(event, context):
+    from facilities.ingestion.recovery import failure_handler
+
+    return failure_handler(event, context)
