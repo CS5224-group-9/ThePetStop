@@ -1,38 +1,44 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Map as LibreMap, Marker } from "maplibre-gl";
-import { localUI } from "@/lib/data-source";
+import { radiusArea } from "@/lib/facility-search";
+import { singaporeBounds, type SearchLocation } from "@/lib/location";
 import type { Facility } from "@/lib/api/types";
 function LiveFacilityMap({
   facilities,
   selected,
   onSelect,
+  location,
+  radiusKm,
 }: {
   facilities: Facility[];
   selected: string;
   onSelect: (id: string) => void;
+  location: SearchLocation | null;
+  radiusKm: number | null;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<LibreMap | null>(null);
   const markers = useRef<Marker[]>([]);
+  const selectedId = useRef(selected);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     let current = true;
     let resize: ResizeObserver | null = null;
     import("maplibre-gl")
-      .then(({ Map, NavigationControl }) => {
+      .then(({ Map, NavigationControl, getVersion, setWorkerUrl }) => {
         if (!current || !container.current) return;
+        // Next.js bundles the main module, so its relative worker URL isn't
+        // reliable. predev/prebuild publish the matching version locally.
+        setWorkerUrl(`/maplibre/${getVersion()}/maplibre-gl-worker.mjs`);
         const instance = new Map({
           container: container.current,
           center: [103.83, 1.35],
           zoom: 11,
           minZoom: 11,
           maxZoom: 19,
-          maxBounds: [
-            [103.55, 1.15],
-            [104.15, 1.5],
-          ],
+          maxBounds: singaporeBounds,
           style: {
             version: 8,
             sources: {
@@ -44,8 +50,11 @@ function LiveFacilityMap({
                 tileSize: 256,
                 minzoom: 11,
                 maxzoom: 19,
+                // OneMap's published TileJSON coverage. Avoid tile requests
+                // beyond the provider's extent when panning near the edges.
+                bounds: [103.502, 1.16, 104.11475, 1.56073],
                 attribution:
-                  '<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a> &copy; contributors | <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>',
+                  '<img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" alt="" width="20" height="20" /> <a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a> &copy; contributors | <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>',
               },
             },
             layers: [{ id: "onemap", type: "raster", source: "onemap" }],
@@ -59,11 +68,24 @@ function LiveFacilityMap({
         instance.on("load", () => {
           if (current) setReady(true);
         });
-        instance.on("error", () => {
+        instance.on("error", (event) => {
+          if (process.env.NODE_ENV === "development")
+            console.warn("[Facility map]", event.error);
           if (current)
             setError(
-              "Map tiles are unavailable. You can still use the facility list and directions links.",
+              "Some map content could not load. You can still use the facility list and directions links.",
             );
+        });
+        instance.on("sourcedata", (event) => {
+          // Clear a transient warning when a OneMap tile loads successfully.
+          // Source metadata/idle events alone don't prove that a tile loaded.
+          if (
+            current &&
+            event.sourceId === "onemap" &&
+            event.sourceDataType === "content" &&
+            event.coord
+          )
+            setError("");
         });
         resize = new ResizeObserver(() => instance.resize());
         resize.observe(container.current);
@@ -84,6 +106,114 @@ function LiveFacilityMap({
     };
   }, []);
   useEffect(() => {
+    if (!ready || !map.current) return;
+    if (!location) {
+      map.current.fitBounds(singaporeBounds, { padding: 40, animate: false });
+      return;
+    }
+    let current = true;
+    let marker: Marker | undefined;
+    const instance = map.current;
+    import("maplibre-gl").then(({ Marker }) => {
+      if (!current) return;
+      const element = document.createElement("div");
+      element.className =
+        location.source === "device"
+          ? "current-location-marker"
+          : "searched-location-marker";
+      if (location.source === "search") {
+        // Constant SVG; location labels are assigned separately as text attributes.
+        element.innerHTML =
+          '<svg viewBox="0 0 32 40" aria-hidden="true"><path d="M16 1C8 1 2 7 2 15c0 10 14 24 14 24s14-14 14-24C30 7 24 1 16 1Z" fill="currentColor" stroke="white" stroke-width="2"/><circle cx="16" cy="15" r="5" fill="white"/></svg>';
+      }
+      element.setAttribute("role", "img");
+      element.setAttribute("aria-label", location.label);
+      element.title = location.label;
+      marker = new Marker({
+        element,
+        anchor: location.source === "search" ? "bottom" : "center",
+      })
+        .setLngLat([location.longitude, location.latitude])
+        .addTo(instance);
+      const animate = !window.matchMedia("(prefers-reduced-motion: reduce)")
+        .matches;
+      if (radiusKm === null) {
+        instance.fitBounds(singaporeBounds, { padding: 40, animate });
+      } else {
+        const ring = radiusArea(location, radiusKm).geometry.coordinates[0];
+        const xs = ring.map((point) => point[0]),
+          ys = ring.map((point) => point[1]);
+        instance.fitBounds(
+          [
+            [Math.min(...xs), Math.min(...ys)],
+            [Math.max(...xs), Math.max(...ys)],
+          ],
+          { padding: 40, maxZoom: 15, animate },
+        );
+      }
+    });
+    return () => {
+      current = false;
+      marker?.remove();
+    };
+  }, [location, radiusKm, ready]);
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    const instance = map.current;
+    const id = "facility-search-radius";
+    if (!location || radiusKm === null) {
+      if (instance.getLayer(`${id}-line`)) instance.removeLayer(`${id}-line`);
+      if (instance.getLayer(`${id}-fill`)) instance.removeLayer(`${id}-fill`);
+      if (instance.getSource(id)) instance.removeSource(id);
+      return;
+    }
+    const data = radiusArea(location, radiusKm);
+    const source = instance.getSource<import("maplibre-gl").GeoJSONSource>(id);
+    if (source) source.setData(data);
+    else {
+      instance.addSource(id, { type: "geojson", data });
+      instance.addLayer({
+        id: `${id}-fill`,
+        type: "fill",
+        source: id,
+        paint: { "fill-color": "#006b5f", "fill-opacity": 0.08 },
+      });
+      instance.addLayer({
+        id: `${id}-line`,
+        type: "line",
+        source: id,
+        paint: {
+          "line-color": "#006b5f",
+          "line-width": 2,
+          "line-dasharray": [3, 2],
+        },
+      });
+    }
+  }, [location, radiusKm, ready]);
+  useEffect(() => {
+    selectedId.current = selected;
+    markers.current.forEach((marker) => {
+      const element = marker.getElement();
+      const active = element.dataset.facilityId === selected;
+      element.classList.toggle("active", active);
+      element.setAttribute("aria-pressed", String(active));
+    });
+    const facility = facilities.find((f) => f.id === selected);
+    if (
+      !ready ||
+      !map.current ||
+      !facility ||
+      facility.latitude === null ||
+      facility.longitude === null
+    )
+      return;
+    map.current.flyTo({
+      center: [facility.longitude, facility.latitude],
+      zoom: Math.max(map.current.getZoom(), 14),
+      animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    });
+  }, [selected, facilities, ready]);
+  useEffect(() => {
     let current = true;
     if (!ready || !map.current) return;
     const instance = map.current;
@@ -95,10 +225,34 @@ function LiveFacilityMap({
         if (facility.latitude === null || facility.longitude === null) continue;
         const element = document.createElement("button");
         element.type = "button";
-        element.className = `facility-live-marker ${facility.id === selected ? "active" : ""} ${facility.emergency ? "emergency" : ""}`;
-        element.textContent = facility.type === "Pet shop" ? "●" : "+";
+        element.dataset.facilityId = facility.id;
+        const active = facility.id === selectedId.current;
+        element.className = `facility-live-marker ${active ? "active" : ""} ${facility.type === "Pet shop" ? "shop" : "vet"}`;
+        const svg = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "svg",
+        );
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("fill", "none");
+        svg.setAttribute("stroke", "currentColor");
+        svg.setAttribute("stroke-width", "1.8");
+        svg.setAttribute("stroke-linecap", "round");
+        svg.setAttribute("stroke-linejoin", "round");
+        svg.setAttribute("aria-hidden", "true");
+        const path = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path",
+        );
+        path.setAttribute(
+          "d",
+          facility.type === "Pet shop"
+            ? "M4 7h16l1 14H3Z M8 8V6a4 4 0 0 1 8 0v2"
+            : "M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6Z",
+        );
+        svg.appendChild(path);
+        element.appendChild(svg);
         element.setAttribute("aria-label", `Show ${facility.name}`);
-        element.setAttribute("aria-pressed", String(facility.id === selected));
+        element.setAttribute("aria-pressed", String(active));
         element.addEventListener("click", () => onSelect(facility.id));
         markers.current.push(
           new Marker({ element })
@@ -110,7 +264,7 @@ function LiveFacilityMap({
     return () => {
       current = false;
     };
-  }, [facilities, selected, onSelect, ready]);
+  }, [facilities, onSelect, ready]);
   return (
     <>
       <div
@@ -136,75 +290,8 @@ export function FacilityMap(props: {
   facilities: Facility[];
   selected: string;
   onSelect: (id: string) => void;
+  location: SearchLocation | null;
+  radiusKm: number | null;
 }) {
-  if (!localUI) return <LiveFacilityMap {...props} />;
-  return (
-    <div
-      className="local-facility-map"
-      aria-label="Singapore sample facility map"
-    >
-      <svg
-        viewBox="0 0 800 470"
-        role="img"
-        aria-label="Schematic of Singapore, approximate locations"
-        preserveAspectRatio="xMidYMid slice"
-      >
-        <rect width="800" height="470" fill="#dbe9eb" />
-        <path
-          d="M65 290L107 229L160 223L190 156L274 116L347 99L409 136L481 128L551 159L624 167L719 230L746 284L674 314L611 311L545 350L462 337L402 358L337 322L249 334L182 312L121 327Z"
-          fill="#e9eee4"
-          stroke="#c6d4c7"
-          strokeWidth="3"
-        />
-        <path
-          d="M110 279L263 242L409 202L574 220L702 262 M190 290L337 262L485 282L627 274 M291 149L332 264L403 329 M487 151L485 282"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="12"
-        />
-        <path
-          d="M110 279L263 242L409 202L574 220L702 262 M190 290L337 262L485 282L627 274 M291 149L332 264L403 329 M487 151L485 282"
-          fill="none"
-          stroke="#d6d3be"
-          strokeWidth="2"
-        />
-        <path d="M351 127L374 173L355 217L325 204L319 166Z" fill="#c5d9bd" />
-        <g fill="#526b65" fontSize="16" fontFamily="system-ui">
-          <text x="120" y="203">
-            Jurong
-          </text>
-          <text x="350" y="110">
-            Central catchment
-          </text>
-          <text x="594" y="195">
-            Tampines
-          </text>
-          <text x="446" y="335">
-            City centre
-          </text>
-        </g>
-      </svg>
-      <span className="local-map-caption">SINGAPORE · SCHEMATIC MAP</span>
-      {props.facilities.map((f) => (
-        <button
-          key={f.id}
-          type="button"
-          className={`local-map-pin facility-live-marker ${f.id === props.selected ? "active" : ""}`}
-          style={{
-            left: `${15 + (((f.longitude ?? 103.8) - 103.7) / 0.3) * 70}%`,
-            top: `${75 - (((f.latitude ?? 1.33) - 1.28) / 0.13) * 65}%`,
-          }}
-          aria-label={`Show ${f.name}`}
-          aria-pressed={f.id === props.selected}
-          title={f.name}
-          onClick={() => props.onSelect(f.id)}
-        >
-          {f.type === "Pet shop" ? "●" : "+"}
-        </button>
-      ))}
-      <span className="local-map-note">
-        Sample locations · Not for navigation
-      </span>
-    </div>
-  );
+  return <LiveFacilityMap {...props} />;
 }

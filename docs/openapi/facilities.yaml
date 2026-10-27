@@ -1,0 +1,331 @@
+openapi: 3.1.0
+info:
+  title: ThePetStop Facilities API
+  version: 0.1.0
+  description: >-
+    Public endpoints for searching Singapore locations and discovering pet-care
+    facilities. The location search operation is implemented. Facility list
+    and detail operations describe the agreed frontend contract and are not
+    implemented by the current Django backend yet.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local Django API
+  - url: https://api.example.com/api/v1
+    description: Replace with the deployed API Gateway URL
+tags:
+  - name: Facilities
+    description: Public facility discovery endpoints
+  - name: Locations
+    description: Public OneMap-backed address lookup
+paths:
+  /facilities/:
+    get:
+      tags: [Facilities]
+      operationId: listFacilities
+      summary: List pet-care facilities
+      description: >-
+        Planned contract; this route is not implemented in the current backend.
+        Results include active facilities only. When latitude and longitude are
+        supplied, radius filtering uses straight-line distance in kilometres.
+      x-implementation-status: planned
+      parameters:
+        - $ref: '#/components/parameters/Latitude'
+        - $ref: '#/components/parameters/Longitude'
+        - name: radius_km
+          in: query
+          description: Maximum straight-line distance from lat/lng, in kilometres.
+          schema:
+            type: number
+            exclusiveMinimum: 0
+            maximum: 100
+        - name: type
+          in: query
+          description: Filter by facility type.
+          schema:
+            $ref: '#/components/schemas/FacilityType'
+        - name: q
+          in: query
+          description: Case-insensitive search over facility name and address.
+          schema:
+            type: string
+            maxLength: 120
+        - name: postal_code
+          in: query
+          description: Exact Singapore six-digit postal code.
+          schema:
+            type: string
+            pattern: '^\d{6}$'
+      responses:
+        '200':
+          description: A page of matching facilities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacilityPage'
+              example:
+                count: 1
+                next: null
+                previous: null
+                results:
+                  - id: '42'
+                    facility_type: vet
+                    name: Example Veterinary Centre
+                    address: 10 Example Road, Singapore 123456
+                    postal_code: '123456'
+                    latitude: 1.3001
+                    longitude: 103.8001
+                    licence_no: AVS-VET-001
+                    phone: '+65 6123 4567'
+                    website: https://example.test
+                    source: AVS licensed veterinary centres
+                    source_url: https://www.nparks.gov.sg/avs
+                    last_checked_at: '2026-10-01T00:00:00Z'
+                    verification_status: verified
+                    is_24_hours: false
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+  /facilities/{id}/:
+    get:
+      tags: [Facilities]
+      operationId: retrieveFacility
+      summary: Get a facility by ID
+      description: Planned contract; this route is not implemented in the current backend.
+      x-implementation-status: planned
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Facility identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Facility details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /locations/search/:
+    get:
+      tags: [Locations]
+      operationId: searchLocations
+      summary: Search Singapore addresses and postal codes
+      description: >-
+        Searches OneMap's first result page. Returns at most 10 unique usable
+        matches. This is an address lookup, independent of the facility registry.
+        Successful responses are not stored by caches.
+      x-implementation-status: implemented
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Address, landmark, or postal-code search text.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 120
+          example: 119077
+      responses:
+        '200':
+          description: Matching locations; an empty array means no usable matches.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+              description: Successful search responses must not be cached.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    maxItems: 10
+                    items:
+                      $ref: '#/components/schemas/LocationSearchResult'
+              example:
+                results:
+                  - label: '119077, Singapore'
+                    postal_code: '119077'
+                    latitude: 1.2842
+                    longitude: 103.7812
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/UpstreamFailure'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/UpstreamTimeout'
+components:
+  parameters:
+    Latitude:
+      name: lat
+      in: query
+      description: WGS84 latitude in Singapore.
+      schema:
+        type: number
+        minimum: 1.15
+        maximum: 1.5
+    Longitude:
+      name: lng
+      in: query
+      description: WGS84 longitude in Singapore.
+      schema:
+        type: number
+        minimum: 103.55
+        maximum: 104.15
+  schemas:
+    FacilityType:
+      type: string
+      enum: [vet, pet_shop]
+    Facility:
+      type: object
+      required: [id, facility_type, name, address]
+      properties:
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+        facility_type:
+          $ref: '#/components/schemas/FacilityType'
+        name:
+          type: string
+        address:
+          type: string
+        postal_code:
+          type: [string, 'null']
+          pattern: '^\d{6}$'
+        latitude:
+          type: [number, 'null']
+          minimum: 1.15
+          maximum: 1.5
+        longitude:
+          type: [number, 'null']
+          minimum: 103.55
+          maximum: 104.15
+        licence_no:
+          type: [string, 'null']
+        phone:
+          type: [string, 'null']
+        website:
+          type: [string, 'null']
+          format: uri
+        source:
+          type: [string, 'null']
+        source_url:
+          type: [string, 'null']
+          format: uri
+        last_checked_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the verification source was last checked.
+        verification_status:
+          type: string
+          description: Registry verification state; clients must not infer verification if absent.
+          example: verified
+        is_24_hours:
+          type: boolean
+          description: Whether the facility operates 24 hours, when known.
+      description: >-
+        Missing coordinates are represented as null; clients should omit the
+        map marker rather than inventing a location. A verification date alone
+        does not mean a facility is currently verified.
+    FacilityPage:
+      type: object
+      required: [count, next, previous, results]
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        next:
+          type: [string, 'null']
+          format: uri
+        previous:
+          type: [string, 'null']
+          format: uri
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Facility'
+    LocationSearchResult:
+      type: object
+      required: [label, postal_code, latitude, longitude]
+      properties:
+        label:
+          type: string
+          maxLength: 500
+        postal_code:
+          type: [string, 'null']
+          pattern: '^\d{6}$'
+        latitude:
+          type: number
+          minimum: 1.15
+          maximum: 1.5
+        longitude:
+          type: number
+          minimum: 103.55
+          maximum: 104.15
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+  responses:
+    InvalidRequest:
+      description: Invalid query parameter or request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: invalid
+              message: Some fields are invalid.
+              details:
+                q: [Ensure this field has at least 2 characters.]
+    NotFound:
+      description: Facility does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    RateLimited:
+      description: More than 30 location searches per minute from this client.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    UpstreamFailure:
+      description: OneMap returned an invalid or failed response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    ServiceUnavailable:
+      description: OneMap credentials or service are unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    UpstreamTimeout:
+      description: OneMap did not respond before the request timeout.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'

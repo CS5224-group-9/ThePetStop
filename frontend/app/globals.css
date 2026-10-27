@@ -4267,6 +4267,32 @@ footer a:hover {
   position: absolute;
   inset: 0;
 }
+.directory-location {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.directory-location p {
+  flex: 1 1 240px;
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+.current-location-marker {
+  width: 22px;
+  height: 22px;
+  border: 3px solid white;
+  border-radius: 50%;
+  background: #1769e0;
+  box-shadow:
+    0 0 0 7px #1769e033,
+    0 2px 5px #0005;
+}
+.maplibregl-ctrl-attrib img {
+  display: inline-block;
+  vertical-align: middle;
+}
 .map-status {
   position: absolute;
   top: 16px;
@@ -4386,4 +4412,10 @@ footer a:hover {
 }
 .local-map-note {
   bottom: 12px;
+}
+
+/* Facility details follow the map instead of covering its pins. */
+.map-detail.facility-details {
+  position: static;
+  margin-top: 18px;
 }
