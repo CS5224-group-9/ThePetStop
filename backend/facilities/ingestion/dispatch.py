@@ -22,6 +22,7 @@ def make_batches(records, batch_size):
         batch_id = f"batch-{start // batch_size:05d}"
         batches.append(
             {
+                "schema_version": 1,
                 "batch_id": batch_id,
                 "queries": ordered_queries[start : start + batch_size],
             }

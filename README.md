@@ -51,9 +51,19 @@ Inside Floci-launched Lambda containers, use `http://floci:4566` for AWS API
 calls and `db:5432` for PostgreSQL. `localhost` inside a Lambda container points
 back to that container. The overlay puts Floci and PostgreSQL on the shared
 `petstop-ingestion` network and tells Floci to attach Lambda containers there.
-The fetch handler now discovers and parses an AVS registry PDF and stores its
-artifacts in S3. Geocoding, queue dispatch, loading, the fixture server and
-resource bootstrap are still planned, so this starts the network services only.
+The fetch handler now discovers and parses an AVS registry PDF, stores its
+manifest and address batches in S3, and dispatches them to an SQS FIFO queue.
+The idempotent geocoding handler is implemented, but the database loader,
+fixture server and resource bootstrap are still planned, so this starts the
+network services only.
+
+The fetch function needs `FACILITY_SYNC_BUCKET` and a FIFO `GEOCODE_QUEUE_URL`.
+The geocoding function needs `FACILITY_SYNC_BUCKET`, `ONEMAP_REQUESTS_PER_MINUTE`
+(defaults to 20), and either `ONEMAP_ACCESS_TOKEN` or `ONEMAP_EMAIL` plus
+`ONEMAP_PASSWORD`. Configure these on the Lambda functions; the backend's
+Django process does not automatically pass its environment to them. For local
+functions, the queue URL must use `http://floci:4566/...`, reachable on the
+shared Docker network.
 
 ### Check the Floci Lambda network
 
