@@ -13,7 +13,7 @@ function LiveFacilityMap({
 }: {
   facilities: Facility[];
   selected: string;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, trigger: HTMLButtonElement) => void;
   location: SearchLocation | null;
   radiusKm: number | null;
 }) {
@@ -197,6 +197,10 @@ function LiveFacilityMap({
       const active = element.dataset.facilityId === selected;
       element.classList.toggle("active", active);
       element.setAttribute("aria-pressed", String(active));
+      element.setAttribute("aria-expanded", String(active));
+      if (active)
+        element.setAttribute("aria-controls", "facility-detail-panel");
+      else element.removeAttribute("aria-controls");
     });
     const facility = facilities.find((f) => f.id === selected);
     if (
@@ -207,6 +211,7 @@ function LiveFacilityMap({
       facility.longitude === null
     )
       return;
+    map.current.resize();
     map.current.flyTo({
       center: [facility.longitude, facility.latitude],
       zoom: Math.max(map.current.getZoom(), 14),
@@ -253,7 +258,10 @@ function LiveFacilityMap({
         element.appendChild(svg);
         element.setAttribute("aria-label", `Show ${facility.name}`);
         element.setAttribute("aria-pressed", String(active));
-        element.addEventListener("click", () => onSelect(facility.id));
+        element.setAttribute("aria-expanded", String(active));
+        if (active)
+          element.setAttribute("aria-controls", "facility-detail-panel");
+        element.addEventListener("click", () => onSelect(facility.id, element));
         markers.current.push(
           new Marker({ element })
             .setLngLat([facility.longitude, facility.latitude])
@@ -289,7 +297,7 @@ function LiveFacilityMap({
 export function FacilityMap(props: {
   facilities: Facility[];
   selected: string;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, trigger: HTMLButtonElement) => void;
   location: SearchLocation | null;
   radiusKm: number | null;
 }) {

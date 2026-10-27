@@ -1,7 +1,6 @@
 "use client";
 import "./facility-explorer.css";
-import { localUI } from "@/lib/data-source";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   searchLocations,
   type LocationResult,
@@ -33,6 +32,39 @@ export function Directory() {
   const placeController = useRef<AbortController | null>(null);
   const locationRequest = useRef(0);
   const pendingLocation = useRef(false);
+  const resultsList = useRef<HTMLDivElement>(null);
+  const detailHeading = useRef<HTMLHeadingElement>(null);
+  const selectionTrigger = useRef<HTMLElement | null>(null);
+  const selectMapFacility = useCallback(
+    (id: string, trigger: HTMLButtonElement) => {
+      selectionTrigger.current = trigger;
+      setSelected(id);
+      const list = resultsList.current;
+      const row = document.getElementById(
+        `facility-result-${encodeURIComponent(id)}`,
+      );
+      if (list && row) {
+        const bounds = list.getBoundingClientRect();
+        const item = row.getBoundingClientRect();
+        if (item.top < bounds.top || item.bottom > bounds.bottom)
+          list.scrollTo({
+            top:
+              list.scrollTop +
+              item.top -
+              bounds.top -
+              Math.max(0, (list.clientHeight - item.height) / 2),
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+              .matches
+              ? "instant"
+              : "smooth",
+          });
+      }
+      requestAnimationFrame(() =>
+        detailHeading.current?.focus({ preventScroll: true }),
+      );
+    },
+    [],
+  );
   useEffect(
     () => () => {
       locationRequest.current += 1;
@@ -118,7 +150,7 @@ export function Directory() {
     cancelPlaceSearch();
     document.getElementById("facility-search")?.focus();
   }
-  function selectFacility(id: string) {
+  function selectFacility(id: string, trigger: HTMLButtonElement) {
     const match = state.facilities.find((item) => item.id === id);
     if (!match) return;
     locationRequest.current += 1;
@@ -126,7 +158,32 @@ export function Directory() {
     setLocationError("");
     cancelPlaceSearch();
     setSuggestionsOpen(false);
+    selectionTrigger.current = trigger;
     setSelected(id);
+    requestAnimationFrame(() => {
+      detailHeading.current?.focus({ preventScroll: true });
+      if (window.matchMedia("(max-width: 700px)").matches)
+        detailHeading.current?.closest(".explorer-map")?.scrollIntoView({
+          block: "start",
+          behavior: "instant",
+        });
+    });
+  }
+  function closeDetails() {
+    const trigger = selectionTrigger.current;
+    const row = document.getElementById(
+      `facility-result-${encodeURIComponent(selected)}`,
+    );
+    setSelected("");
+    requestAnimationFrame(() => {
+      const target = trigger?.isConnected ? trigger : row;
+      target?.focus({ preventScroll: true });
+      if (
+        target?.classList.contains("explorer-row") &&
+        window.matchMedia("(max-width: 700px)").matches
+      )
+        target.scrollIntoView({ block: "nearest", behavior: "instant" });
+    });
   }
   function clearSearch() {
     cancelPlaceSearch();
@@ -369,7 +426,16 @@ export function Directory() {
               </div>
             </div>
           </div>
-          <div className="explorer-panes">
+          <div
+            className="explorer-panes"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && facility) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeDetails();
+              }
+            }}
+          >
             <section className="explorer-results" aria-label="Facility results">
               <div className="explorer-results-heading">
                 <h2 aria-live="polite">
@@ -384,7 +450,7 @@ export function Directory() {
                   <span>{location ? "Nearest first" : "Singapore"}</span>
                 )}
               </div>
-              <div className="explorer-rows">
+              <div className="explorer-rows" ref={resultsList}>
                 {filtered.length ? (
                   filtered.map((f) => (
                     <button
@@ -394,9 +460,14 @@ export function Directory() {
                       id={`facility-result-${encodeURIComponent(f.id)}`}
                       aria-pressed={facility?.id === f.id}
                       aria-controls={
-                        facility ? "facility-detail-panel" : undefined
+                        facility?.id === f.id
+                          ? "facility-detail-panel"
+                          : undefined
                       }
-                      onClick={() => selectFacility(f.id)}
+                      aria-expanded={facility?.id === f.id}
+                      onClick={(event) =>
+                        selectFacility(f.id, event.currentTarget)
+                      }
                     >
                       <span
                         className={`explorer-type-icon ${f.type === "Pet shop" ? "shop" : "vet"}`}
@@ -438,7 +509,7 @@ export function Directory() {
                         </span>
                         <span className="explorer-row-action">
                           {facility?.id === f.id
-                            ? "Selected · details below"
+                            ? "Selected · details open"
                             : "View facility"}
                           <Icon
                             name={facility?.id === f.id ? "check" : "arrow"}
@@ -469,13 +540,107 @@ export function Directory() {
               className="explorer-map"
               aria-label="Singapore facility map"
             >
-              <FacilityMap
-                facilities={filtered}
-                selected={facility?.id || ""}
-                onSelect={setSelected}
-                location={location}
-                radiusKm={radiusKm}
-              />
+              <div
+                className="explorer-map-body"
+                data-detail-open={Boolean(facility)}
+              >
+                <div className="explorer-map-canvas">
+                  <FacilityMap
+                    facilities={filtered}
+                    selected={facility?.id || ""}
+                    onSelect={selectMapFacility}
+                    location={location}
+                    radiusKm={radiusKm}
+                  />
+                </div>
+                {facility && (
+                  <aside
+                    key={facility.id}
+                    className="explorer-detail"
+                    id="facility-detail-panel"
+                    aria-labelledby="facility-detail-title"
+                  >
+                    <div className="explorer-detail-toolbar">
+                      <Badge tone="neutral">{facility.type}</Badge>
+                      <button
+                        type="button"
+                        className="explorer-dismiss"
+                        onClick={closeDetails}
+                        aria-label="Close facility details"
+                      >
+                        <Icon name="close" />
+                      </button>
+                    </div>
+                    <div className="explorer-detail-heading">
+                      <h2
+                        id="facility-detail-title"
+                        ref={detailHeading}
+                        tabIndex={-1}
+                      >
+                        {facility.name}
+                      </h2>
+                      <p>{facility.address}</p>
+                    </div>
+                    <dl className="explorer-facts">
+                      <div>
+                        <dt>Licence number</dt>
+                        <dd>{facility.licence_no || "Not supplied"}</dd>
+                      </div>
+                      <div>
+                        <dt>Verification source</dt>
+                        <dd>{facility.source || "Not supplied"}</dd>
+                      </div>
+                      <div>
+                        <dt>Last checked</dt>
+                        <dd>
+                          {facility.last_checked_at
+                            ? displayDate(facility.last_checked_at)
+                            : "Not supplied"}
+                        </dd>
+                      </div>
+                    </dl>
+                    <div className="explorer-detail-actions">
+                      <a
+                        className="button"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(facility.latitude !== null && facility.longitude !== null ? `${facility.latitude},${facility.longitude}` : facility.address)}`}
+                      >
+                        Get directions
+                        <Icon name="arrow" size={17} />
+                      </a>
+                      {source && (
+                        <a
+                          className="text-link"
+                          href={source}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Verification source ↗
+                        </a>
+                      )}
+                      {website && (
+                        <a
+                          className="text-link"
+                          href={website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Website ↗
+                        </a>
+                      )}
+                      {facility.phone && (
+                        <a
+                          className="text-link"
+                          href={`tel:${facility.phone.replace(/[^+0-9]/g, "")}`}
+                        >
+                          Call {facility.phone}
+                        </a>
+                      )}
+                    </div>
+                  </aside>
+                )}
+              </div>
             </section>
           </div>
           <div className="explorer-map-footer">
@@ -511,97 +676,10 @@ export function Directory() {
             </p>
           </div>
         </div>
-        {facility && (
-          <section
-            className="explorer-detail"
-            id="facility-detail-panel"
-            aria-label={`Details for ${facility.name}`}
-          >
-            <div className="explorer-detail-heading">
-              <div>
-                <Badge tone="neutral">{facility.type}</Badge>
-                <h2>{facility.name}</h2>
-                <p>{facility.address}</p>
-              </div>
-              <button
-                type="button"
-                className="explorer-dismiss"
-                onClick={() => {
-                  setSelected("");
-                  document
-                    .getElementById(
-                      `facility-result-${encodeURIComponent(facility.id)}`,
-                    )
-                    ?.focus();
-                }}
-                aria-label="Close facility details"
-              >
-                <Icon name="close" />
-              </button>
-            </div>
-            <dl className="explorer-facts">
-              <div>
-                <dt>Licence number</dt>
-                <dd>{facility.licence_no || "Not supplied"}</dd>
-              </div>
-              <div>
-                <dt>Verification source</dt>
-                <dd>{facility.source || "Not supplied"}</dd>
-              </div>
-              <div>
-                <dt>Last checked</dt>
-                <dd>
-                  {facility.last_checked_at
-                    ? displayDate(facility.last_checked_at)
-                    : "Not supplied"}
-                </dd>
-              </div>
-            </dl>
-            <div className="explorer-detail-actions">
-              <a
-                className="button"
-                target="_blank"
-                rel="noopener noreferrer"
-                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(facility.latitude !== null && facility.longitude !== null ? `${facility.latitude},${facility.longitude}` : facility.address)}`}
-              >
-                Get directions
-                <Icon name="arrow" size={17} />
-              </a>
-              {source && (
-                <a
-                  className="text-link"
-                  href={source}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Verification source ↗
-                </a>
-              )}
-              {website && (
-                <a
-                  className="text-link"
-                  href={website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Website ↗
-                </a>
-              )}
-              {facility.phone && (
-                <a
-                  className="text-link"
-                  href={`tel:${facility.phone.replace(/[^+0-9]/g, "")}`}
-                >
-                  Call {facility.phone}
-                </a>
-              )}
-            </div>
-          </section>
-        )}
         <p className="explorer-note">
-          {localUI
-            ? "These listings are fictional and unverified; pins show approximate sample locations. Your device location stays in this page’s memory. Directions open an external map."
-            : "Licence information reflects the source and check date shown. Contact the facility to confirm current services and opening hours. Your device location stays in this page’s memory."}
+          Licence information reflects the source and check date shown. Contact
+          the facility to confirm current services and opening hours. Your
+          device location stays in this page’s memory.
         </p>
       </ResourceState>
     </div>

@@ -1,5 +1,6 @@
 /* One frame connects facility search, results and the Singapore map. */
 .facility-explorer {
+  --explorer-pane-height: clamp(28rem, 70svh, 42.5rem);
   min-width: 0;
   color: var(--ink);
 }
@@ -158,13 +159,22 @@
   min-width: 0;
 }
 .explorer-results {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  max-height: 680px;
-  overflow: auto;
-  scrollbar-width: thin;
+  height: var(--explorer-pane-height);
+  overflow: hidden;
   border-right: 1px solid var(--line);
 }
+.explorer-rows {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
 .explorer-results-heading {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -281,8 +291,20 @@
 .explorer-map {
   position: relative;
   min-width: 0;
-  min-height: 600px;
+  container-type: inline-size;
+  overflow-anchor: none;
   background: var(--group);
+}
+.explorer-map-body {
+  position: relative;
+  display: grid;
+  height: var(--explorer-pane-height);
+  overflow: hidden;
+}
+.explorer-map-canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
 }
 .explorer-map .live-map {
   width: 100%;
@@ -322,22 +344,48 @@
   background: #1769e0;
 }
 .explorer-detail {
-  margin-top: 20px;
-  padding: 24px;
-  border: 1px solid var(--control-line);
-  border-radius: 12px;
+  --detail-padding: 24px;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--detail-padding);
+  border-left: 1px solid var(--control-line);
   background: var(--surface);
 }
-.explorer-detail-heading {
+@container (min-width: 580px) {
+  .explorer-map-body[data-detail-open="true"] {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+  }
+  .explorer-detail {
+    position: relative;
+    inset: auto;
+  }
+}
+.explorer-detail-toolbar {
+  position: sticky;
+  top: calc(-1 * var(--detail-padding));
+  z-index: 1;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
+  margin: calc(-1 * var(--detail-padding)) calc(-1 * var(--detail-padding)) 20px;
+  padding: 12px var(--detail-padding);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
 .explorer-detail-heading h2 {
   margin: 10px 0 6px;
   font-size: 1.375rem;
   line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.explorer-detail-heading h2:focus {
+  outline: none;
 }
 .explorer-detail-heading p {
   margin: 0;
@@ -348,6 +396,7 @@
   place-items: center;
   min-width: 44px;
   min-height: 44px;
+  flex-shrink: 0;
   border-radius: 50%;
   background: var(--group);
   color: var(--ink);
@@ -357,7 +406,7 @@
 }
 .explorer-facts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   padding: 20px 0;
   margin: 20px 0 0;
@@ -456,13 +505,14 @@
   }
   .explorer-map {
     order: -1;
-    min-height: 420px;
     border-bottom: 1px solid var(--line);
   }
+  .explorer-map-body {
+    height: 28rem;
+  }
   .explorer-results {
-    max-height: none;
+    height: min(32rem, 70svh);
     border-right: 0;
-    overflow: visible;
   }
   .explorer-map-footer {
     padding: 14px;
@@ -471,7 +521,7 @@
     text-align: left;
   }
   .explorer-detail {
-    padding: 18px;
+    --detail-padding: 18px;
   }
 }
 @media (prefers-contrast: more) {
