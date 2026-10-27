@@ -161,7 +161,9 @@ class OneMapClient:
                 (
                     value.strip()
                     for value in (row.get("ADDRESS"), row.get("SEARCHVAL"))
-                    if isinstance(value, str) and value.strip() and value.strip() != "NIL"
+                    if isinstance(value, str)
+                    and value.strip()
+                    and value.strip() != "NIL"
                 ),
                 None,
             )
