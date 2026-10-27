@@ -9,6 +9,12 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import boto3
 
+from facilities.ingestion.dispatch import (
+    batch_size_from_environment,
+    create_batch_artifacts,
+    dispatch_batches,
+    resume_dispatch,
+)
 from facilities.ingestion.parsers import parse_registry_pdf
 
 DEFAULT_SOURCES = {
@@ -117,9 +123,17 @@ def _find_pdf(html, page_url, source, allowed_hosts):
     return matches[0]
 
 
-def fetch_registry(source, s3_client=None):
+def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
     if source not in DEFAULT_SOURCES:
         raise RegistryFetchError(f"Unsupported facility source: {source}")
+    bucket = os.environ.get("FACILITY_SYNC_BUCKET")
+    queue_url = os.environ.get("GEOCODE_QUEUE_URL")
+    if not bucket or not queue_url or not queue_url.endswith(".fifo"):
+        raise RegistryFetchError("Configure FACILITY_SYNC_BUCKET and a FIFO GEOCODE_QUEUE_URL")
+    try:
+        batch_size = batch_size_from_environment()
+    except ValueError as error:
+        raise RegistryFetchError(str(error)) from error
     config = _source_config()
     if source not in config or not config[source].get("registry_url"):
         raise RegistryFetchError(f"No registry URL configured for {source}")
@@ -131,25 +145,44 @@ def fetch_registry(source, s3_client=None):
     if not pdf.startswith(b"%PDF-"):
         raise RegistryFetchError("AVS registry download is not a PDF")
 
-    run_id = str(uuid.uuid4())
+    run_id = str(uuid.UUID(run_id)) if run_id else str(uuid.uuid4())
     sha256 = hashlib.sha256(pdf).hexdigest()
-    bucket = os.environ.get("FACILITY_SYNC_BUCKET")
     if s3_client is None:
         s3_client = boto3.client(
             "s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
         )
-    if not bucket:
-        raise RegistryFetchError("FACILITY_SYNC_BUCKET is required")
     prefix = f"runs/{source}/{run_id}"
+    manifest_key = f"pending/{source}/{run_id}/manifest.json"
+    try:
+        existing_manifest = json.loads(
+            s3_client.get_object(Bucket=bucket, Key=manifest_key)["Body"].read()
+        )
+    except s3_client.exceptions.NoSuchKey:
+        existing_manifest = None
+    if existing_manifest is not None:
+        if existing_manifest.get("document_sha256") != sha256:
+            raise RegistryFetchError("A run ID cannot be reused for a different registry PDF")
+        if sqs_client is None:
+            sqs_client = boto3.client(
+                "sqs", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
+            )
+        return resume_dispatch(
+            s3_client, sqs_client, queue_url, bucket, source, run_id
+        )
+
+    raw_key = f"raw/{source}/{sha256}.pdf"
     s3_client.put_object(
         Bucket=bucket,
-        Key=f"{prefix}/registry.pdf",
+        Key=raw_key,
         Body=pdf,
         ContentType="application/pdf",
         Metadata={"sha256": sha256},
     )
 
     records = parse_registry_pdf(pdf, source)
+    batches, batch_keys, batch_versions = create_batch_artifacts(
+        s3_client, bucket, source, run_id, records, batch_size
+    )
     result = {
         "schema_version": 1,
         "run_id": run_id,
@@ -157,19 +190,65 @@ def fetch_registry(source, s3_client=None):
         "registry_url": page_url,
         "document_url": document_url,
         "document_sha256": sha256,
+        "raw_key": raw_key,
         "parsed_count": len(records),
+        "parser_version": "1",
+        "expected_batch_ids": [batch["batch_id"] for batch in batches],
         "records": records,
     }
+    parsed_key = f"{prefix}/parsed.json"
     s3_client.put_object(
         Bucket=bucket,
-        Key=f"{prefix}/parsed.json",
+        Key=parsed_key,
         Body=json.dumps(result, separators=(",", ":")).encode("utf-8"),
         ContentType="application/json",
     )
-    return {"run_id": run_id, "source": source, "document_sha256": sha256, "parsed_count": len(records)}
+    if sqs_client is None:
+        sqs_client = boto3.client(
+            "sqs", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
+        )
+    manifest_key = dispatch_batches(
+        s3_client,
+        sqs_client,
+        queue_url,
+        bucket,
+        source,
+        run_id,
+        parsed_key,
+        sha256,
+        batches,
+        batch_keys,
+        batch_versions,
+    )
+    return {
+        "run_id": run_id,
+        "source": source,
+        "document_sha256": sha256,
+        "parsed_count": len(records),
+        "batch_count": len(batches),
+        "manifest_key": manifest_key,
+    }
 
 
 def handler(event, context):
-    if event.get("operation") != "start":
-        raise RegistryFetchError("Only the start operation is supported")
-    return fetch_registry(event.get("source", ""))
+    operation = event.get("operation")
+    source = event.get("source", "")
+    if operation not in {"start", "dispatch"}:
+        raise RegistryFetchError("Supported operations are start and dispatch")
+    if source not in DEFAULT_SOURCES:
+        raise RegistryFetchError(f"Unsupported facility source: {source}")
+
+    bucket = os.environ.get("FACILITY_SYNC_BUCKET")
+    queue_url = os.environ.get("GEOCODE_QUEUE_URL")
+    if not bucket or not queue_url or not queue_url.endswith(".fifo"):
+        raise RegistryFetchError("Configure FACILITY_SYNC_BUCKET and a FIFO GEOCODE_QUEUE_URL")
+    region = os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
+    s3 = boto3.client("s3", region_name=region)
+    sqs = boto3.client("sqs", region_name=region)
+    if operation == "dispatch":
+        try:
+            run_id = str(uuid.UUID(event.get("run_id", "")))
+        except ValueError as error:
+            raise RegistryFetchError("dispatch requires a valid run_id") from error
+        return resume_dispatch(s3, sqs, queue_url, bucket, source, run_id)
+    return fetch_registry(source, event.get("run_id"), s3, sqs)
