@@ -233,12 +233,23 @@ Register and confirm a OneMap account at <https://www.onemap.gov.sg/apidocs/regi
 
 The client authenticates using `/api/auth/post/getToken`, uses a supplied token until OneMap rejects it, keeps generated tokens in process memory until their reported expiry, and retries once with renewed authentication when search rejects the token (including OneMap's HTTP-200 error payload). HTTPS calls use a fixed host, a four-second socket timeout, bounded response size, and no redirect following. Upstream failure/timeout responses use the shared error contract and never include upstream bodies or credentials. Search is throttled to 30 requests per minute per client identity using Django's cache; this is a development/process-local guard, not a distributed production quota.
 
-Tests never call OneMap or require a database:
+The address-search tests never call OneMap or require a database:
 
 ```powershell
-uv run python manage.py test facilities --noinput
+uv run python manage.py test facilities.tests --noinput
 ```
 
 The current production Django Lambda has no outbound internet access. Interactive OneMap search deployment remains PR 3 work; the local proxy does not change the VPC architecture.
+
+### Facility ingestion reliability
+
+The ingestion pipeline has durable S3 status events, database run/event history,
+query checkpoints, bounded retries, reconciliation, failure queues and a review
+gate for large deactivations. Apply migrations before updating the Lambda image.
+Runs/events/facilities are available read-only in Django admin. The ingestion
+tests require PostgreSQL; `uv run python manage.py test facilities.test_ingestion`
+covers rollback, checkpoint recovery, duplicate delivery and review approval.
+See [the operations runbook](../docs/facility-ingestion-operations.md) for the
+isolated Floci suite, recovery commands, configuration and AWS release gate.
 
 An existing token alone works until rejected. On rejection, the server obtains a new token using the configured email/password and retries the search once. The replacement is reused in memory; `.env` is never rewritten. After a process restart, the configured starting token is tried again. With no renewal credentials, replace the token manually and restart Django. Generated tokens with a known expired timestamp are renewed before the next search; no scheduled refresh job is required.

@@ -1,5 +1,13 @@
 # Data model
 
+Facility ingestion now uses `FacilitySyncRun` and immutable `FacilitySyncEvent`
+rows for stage, activity, expected/completed batches, retries and safe errors.
+Run statuses include `review_required` for snapshots exceeding the configured
+deactivation threshold. Multiple runs may be tracked for one source; the loader
+serializes updates using `FacilitySourceState` and rejects stale snapshots.
+`Facility.licence_no` uses an empty string when the source supplies no licence.
+See [facility ingestion operations](facility-ingestion-operations.md).
+
 Django marketplace catalogue models are implemented; the remaining domain models are drafts. This file is the source of truth for models; the MVP Development Plan lists only model names and points here. Coordinate marketplace schema changes with D1 and D3, and update this file when a model changes.
 
 Each app's tables share one PostgreSQL schema with the app name as prefix (`pets_pet`, `marketplace_product`), which keeps the domains separate without custom schema routing.

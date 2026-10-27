@@ -79,8 +79,8 @@ uv run --project backend python scripts/facilities/bootstrap_local.py `
 ```
 
 The bootstrap refuses non-local endpoints. It creates or updates the local S3
-bucket, FIFO geocoding queue and dead-letter queue, three Lambda functions, the
-SQS event mapping, and the S3 `ready/` notification. It preserves the
+bucket, geocoding and invocation failure queues, five Lambda functions, SQS
+event mappings, and S3 `ready/` and `status/` notifications. It preserves the
 PostgreSQL volume and existing rows. Re-run it after rebuilding the image.
 
 Start both registry syncs and wait for the SQS geocoder and S3 loader to finish:
@@ -96,6 +96,9 @@ registry run can take several minutes. You can select one source with
 `--source vet` or `--source pet_shop`. The pipeline uses local emulator
 resources and writes facilities to the local database; do not use these
 commands against AWS.
+
+Run history, recovery, snapshot review, isolated fixture checks and the AWS
+handoff are documented in [facility ingestion operations](docs/facility-ingestion-operations.md).
 
 ### Check the Floci Lambda network
 
