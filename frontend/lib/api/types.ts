@@ -95,7 +95,6 @@ export type Facility = {
   type: string;
   address: string;
   area: string;
-  emergency: boolean;
   latitude: number | null;
   longitude: number | null;
   phone: string;

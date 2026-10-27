@@ -2,7 +2,7 @@
 
 ## Standalone frontend UI
 
-The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six fictional merchant catalogues, facility search with a live OneMap basemap and sample pins, care records/reminders, browser-persisted cart and simulated orders, plus merchant editing and per-shop storefront pages. No API or Cognito setup is needed to explore these flows. Local data is a single browser workspace for sample information; document files remain in tab memory until reload. Listings are fictional and unverified. Set `NEXT_PUBLIC_DATA_SOURCE=api` to use the API/Cognito boundary described below; the public marketplace catalogue API is implemented, while other feature endpoints remain outstanding. Local mode does not replace API authorization or implement AWS services.
+The frontend defaults to `NEXT_PUBLIC_DATA_SOURCE=local` for sample pets, fictional merchant catalogues, care records/reminders, browser-persisted cart and simulated orders, merchant editing and storefront pages. Facility listings and location search use the public Django API in both modes; there are no sample facilities or fallback listings. Configure `NEXT_PUBLIC_API_BASE_URL` and run Django to use the directory. Set `NEXT_PUBLIC_DATA_SOURCE=api` to use the API/Cognito boundary described below; public marketplace and facility listing APIs are implemented, while other feature endpoints remain outstanding. Local mode does not replace API authorization or implement AWS services.
 
 
 Updated 2026-10-19. Scope: production-oriented frontend, with backend/infrastructure implemented separately. No Django or AWS resources are created by this change. The app has no runtime demo mode or fallback data.
@@ -25,7 +25,7 @@ Register callback/logout URLs and authorization-code/PKCE support in Cognito. To
 
 ## Contract status
 
-Routes, ownership rules, pagination and integer-cent conventions follow `repository-structure.md`. The public marketplace catalogue endpoints are now implemented in Django. Pet, facility, cart, checkout, order and merchant-write endpoints remain unimplemented. The catalogue wire shapes below should be checked against the serializers; the remaining wire shapes are **an explicit integration proposal**, derived from the draft data model, not generated backend types. Do not declare the complete application production-ready from frontend checks alone.
+Routes, ownership rules, pagination and integer-cent conventions follow `repository-structure.md`. The public marketplace catalogue and facility listing endpoints are implemented in Django. Pet, cart, checkout, order and merchant-write endpoints remain unimplemented. The catalogue wire shapes below should be checked against the serializers; the remaining wire shapes are **an explicit integration proposal**, derived from the draft data model, not generated backend types. Do not declare the complete application production-ready from frontend checks alone.
 
 All lists return `{count, next, previous, results}`. `next` must remain on the configured API origin and under the configured base path. IDs may be strings or integers. Errors return `{error:{code,message,details}}`, with 401 for unauthenticated requests, 403 for insufficient role, and 404 for another owner’s private record. API redirects are rejected. Request/response field names are snake_case; amounts and stock are nonnegative integers.
 
@@ -34,7 +34,7 @@ All lists return `{count, next, previous, results}`. `next` must remain on the c
 - `GET categories/`: each row `{id,name,slug,sort_order}`.
 - `GET merchants/` and `GET merchants/{slug}/`: each row `{id,name,slug,description,logo_key}`. `GET merchants/{slug}/products/` returns the active products for that shop.
 - `GET products/?q&category&merchant&min_price&max_price&type&species&sort` and `GET products/{id}/`: rows include `{id,name,slug,description,species,size,price_cents,stock,product_type,duration_minutes,category,merchant,image_key,image_url,also_sold_by}`. Category and merchant are nested metadata objects. `image_url` is null until public product-image delivery is configured. Equivalent offers include their own `{id,name,price_cents,stock,merchant}`.
-- `GET facilities/`: `{id,facility_type,name,address,postal_code,latitude,longitude,licence_no,phone,website,source,source_url,last_checked_at,verification_status?,is_24_hours?}`. `facility_type` is `vet` or `pet_shop`; coordinates may be numeric strings or null. Only explicit `verification_status:"verified"` with a check date gets the checked badge; omitted/unverified status is labelled honestly. A check date remains visible and does not imply real-time verification. Missing coordinates produce no fabricated pin. Registry filtering/cleaning belongs to the backend.
+- `GET facilities/`: paginated active database rows `{id,facility_type,name,address,postal_code,latitude,longitude,licence_no,phone,website,source,source_url,last_checked_at,verification_status}`. `facility_type` is `vet` or `pet_shop`; coordinates may be numeric strings or null. The backend marks rows verified only when they have a registry check date. A check date remains visible and does not imply real-time verification. Missing coordinates produce no fabricated pin. The current registry model has no opening-hours field, so the UI does not claim 24-hour availability.
 
 ### Account and pet resources
 

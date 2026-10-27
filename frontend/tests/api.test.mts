@@ -56,6 +56,43 @@ test("public requests preserve headers, never send credentials, disable caching 
   assert.equal(captured?.credentials, "omit");
   assert.equal(captured?.redirect, "error");
 });
+test("facility listings come from the public paginated API and map backend fields", async () => {
+  const client = createApiClient({
+    baseUrl: origin,
+    fetcher: async (url, init) => {
+      assert.equal(String(url), origin + "facilities/");
+      assert.equal(new Headers(init?.headers).has("Authorization"), false);
+      return json({
+        count: 1,
+        next: null,
+        previous: null,
+        results: [
+          {
+            id: "facility-1",
+            facility_type: "vet",
+            name: "Bishan Veterinary Centre",
+            address: "1 Bishan Street",
+            postal_code: "570001",
+            latitude: "1.35",
+            longitude: "103.84",
+            licence_no: "V001",
+            phone: "61234567",
+            website: "https://example.test",
+            source: "AVS",
+            source_url: "https://example.test/registry",
+            last_checked_at: "2026-10-28T00:00:00Z",
+            verification_status: "verified",
+          },
+        ],
+      });
+    },
+  });
+  const [facility] = await createServices(client).facilities();
+  assert.equal(facility.id, "facility-1");
+  assert.equal(facility.type, "Veterinary centre");
+  assert.equal(facility.latitude, 1.35);
+  assert.equal(facility.verification_status, "verified");
+});
 test("private requests require a token and report expired sessions", async () => {
   let calls = 0;
   let expired = 0;

@@ -287,7 +287,6 @@ export function facility(value: unknown): Facility {
     type: v.facility_type === "vet" ? "Veterinary centre" : "Pet shop",
     address: text(v.address),
     area: text(v.postal_code),
-    emergency: v.is_24_hours === true,
     latitude: coordinate(v.latitude, -90, 90),
     longitude: coordinate(v.longitude, -180, 180),
     phone: text(v.phone),

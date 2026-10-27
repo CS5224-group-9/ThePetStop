@@ -18,7 +18,6 @@ export function Directory() {
   const { state } = useApp();
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
-  const [emergency, setEmergency] = useState(false);
   const [selected, setSelected] = useState("");
   const [location, setLocation] = useState<SearchLocation | null>(null);
   const [locating, setLocating] = useState(false);
@@ -140,24 +139,17 @@ export function Directory() {
     setLocationError("");
   }
   const filtered = useMemo(
-    () =>
-      nearbyFacilities(
-        state.facilities,
-        { type, emergency },
-        location,
-        radiusKm,
-      ),
-    [state.facilities, type, emergency, location, radiusKm],
+    () => nearbyFacilities(state.facilities, { type }, location, radiusKm),
+    [state.facilities, type, location, radiusKm],
   );
   const facility = filtered.find((f) => f.id === selected);
   const source = safeExternalUrl(facility?.source_url);
   const website = safeExternalUrl(facility?.website);
   function resetFilters() {
     setType("");
-    setEmergency(false);
     setRadiusKm(5);
   }
-  const hasFilters = Boolean(type || emergency || (location && radiusKm !== 5));
+  const hasFilters = Boolean(type || (location && radiusKm !== 5));
   return (
     <div className="facility-explorer">
       <header className="explorer-heading">
@@ -375,14 +367,6 @@ export function Directory() {
                   </button>
                 ))}
               </div>
-              <label className="explorer-emergency">
-                <input
-                  type="checkbox"
-                  checked={emergency}
-                  onChange={(e) => setEmergency(e.target.checked)}
-                />
-                24-hour emergency
-              </label>
             </div>
           </div>
           <div className="explorer-panes">
@@ -425,12 +409,6 @@ export function Directory() {
                       <span className="explorer-row-content">
                         <span className="explorer-row-heading">
                           <span className="explorer-row-type">{f.type}</span>
-                          {f.emergency && (
-                            <span className="explorer-hours-badge">
-                              <Icon name="clock" size={13} />
-                              24-hour
-                            </span>
-                          )}
                         </span>
                         <strong>{f.name}</strong>
                         {location && (

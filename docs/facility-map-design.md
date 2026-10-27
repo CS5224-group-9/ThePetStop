@@ -9,7 +9,7 @@ Overall: Needs work before this change. The screen's job is geographic discovery
 - **High, layout:** Detached cards and a separate results-count box obscure the relationship between results and pins. `layout.md › Visual hierarchy`: “Group related items to clearly express related information or functions.” Use one frame and one divider between result rows and map.
 - **Medium, density:** Repeating large icons, badges and metadata sections makes the directory unnecessarily tall. `lists-and-tables.md › Content`: “Keep item text succinct so row content is comfortable to read.” Keep names, type, address and compact verification evidence; disclose full contact/licence details on selection.
 - **Medium, interaction:** List selection should visibly locate the corresponding pin. `split-views.md › Best practices`: “persistently highlight the current selection”. Keep an active row and marker, move the camera on selection, and provide a dismissible detail section below the workspace.
-- **Keep:** In-context geolocation permission, honest sample-data labelling, source/check dates, external directions, map/list alternatives and reduced-motion behaviour.
+- **Keep:** In-context geolocation permission, honest registry/source labelling, source/check dates, external directions, map/list alternatives and reduced-motion behaviour.
 
 ## Plan and tokens
 
@@ -30,10 +30,10 @@ Type: existing system sans for display and body; 28–36px heading, 16px row tit
 Regular width:
 
 ```text
-Find pet care in Singapore                 Sample listings
+Find pet care in Singapore                 AVS facilities
 +-------------------------------------------------------+
 | Search facilities                  Use my location     |
-| All / Vets / Pet shops     Emergency    Split/Map/List |
+| All / Vets / Pet shops                 Split/Map/List |
 +------------------+------------------------------------+
 | Results          |                                    |
 | compact rows     | Singapore map                      |

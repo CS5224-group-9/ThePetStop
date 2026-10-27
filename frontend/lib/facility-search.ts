@@ -2,13 +2,12 @@ import type { Facility } from "./api/types.ts";
 
 export function filterFacilities(
   facilities: Facility[],
-  filters: { query: string; type: string; emergency: boolean },
+  filters: { query: string; type: string },
 ): Facility[] {
   const query = filters.query.trim().toLowerCase();
   return facilities.filter(
     (facility) =>
       (!filters.type || facility.type === filters.type) &&
-      (!filters.emergency || facility.emergency) &&
       `${facility.name} ${facility.area} ${facility.address}`
         .toLowerCase()
         .includes(query),
@@ -43,7 +42,7 @@ export function distanceKm(from: Coordinates, to: Coordinates): number | null {
 
 export function nearbyFacilities(
   facilities: Facility[],
-  filters: { type: string; emergency: boolean },
+  filters: { type: string },
   centre: Coordinates | null,
   radiusKm: number | null,
 ): (Facility & { distance_km: number | null })[] {

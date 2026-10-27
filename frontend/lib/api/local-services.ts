@@ -90,70 +90,6 @@ export function seedLocalState(): Store {
       })),
     ),
   );
-  const facilities = [
-    [
-      "f0",
-      "Bishan Companion Vet",
-      "Veterinary centre",
-      "Bishan",
-      1.35,
-      103.848,
-      true,
-    ],
-    [
-      "f1",
-      "Tampines Family Vet",
-      "Veterinary centre",
-      "Tampines",
-      1.353,
-      103.945,
-      false,
-    ],
-    [
-      "f2",
-      "Holland Village Pet Care",
-      "Veterinary centre",
-      "Holland Village",
-      1.312,
-      103.796,
-      false,
-    ],
-    [
-      "f3",
-      "Little Paws Toa Payoh",
-      "Pet shop",
-      "Toa Payoh",
-      1.334,
-      103.855,
-      false,
-    ],
-    ["f4", "Whisker & Co. Bedok", "Pet shop", "Bedok", 1.325, 103.931, false],
-    [
-      "f5",
-      "The Happy Tail Jurong",
-      "Pet shop",
-      "Jurong East",
-      1.333,
-      103.743,
-      false,
-    ],
-  ].map(([id, name, type, area, latitude, longitude, emergency]) => ({
-    id: String(id),
-    name: String(name),
-    type: String(type),
-    address: `${area}, Singapore (sample location)`,
-    area: String(area),
-    latitude: Number(latitude),
-    longitude: Number(longitude),
-    emergency: Boolean(emergency),
-    phone: "",
-    website: "",
-    licence_no: "",
-    source: "Fictional listing · UI preview",
-    source_url: "",
-    last_checked_at: null,
-    verification_status: "unverified",
-  }));
   return {
     ...emptyState(),
     role: "owner",
@@ -167,7 +103,7 @@ export function seedLocalState(): Store {
     merchants,
     categories,
     products,
-    facilities,
+    facilities: [],
     pets: [
       {
         id: "kopi",
@@ -252,8 +188,10 @@ function read(): Store {
           Array.isArray(parsed.pets) &&
           parsed.checkoutKeys &&
           parsed.profile?.id === "local-owner"
-        )
+        ) {
+          parsed.facilities = [];
           return (memory = parsed);
+        }
       }
     } catch {
       /* Storage may be blocked; keep the UI usable in memory. */
@@ -308,7 +246,7 @@ export const localServices: ReturnType<typeof createServices> = {
     });
   },
   async facilities() {
-    return copy(read().facilities);
+    return [];
   },
   async me() {
     return copy(required(read().profile ?? undefined));
