@@ -12,6 +12,9 @@ services:
     environment:
       FLOCI_HOSTNAME: floci
       FLOCI_SERVICES_LAMBDA_DOCKER_NETWORK: petstop-ingestion
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: ap-southeast-1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

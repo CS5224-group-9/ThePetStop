@@ -5,10 +5,9 @@ import uuid
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
-import boto3
-
+from facilities.ingestion.aws import client as aws_client
 from facilities.ingestion.dispatch import (
     batch_size_from_environment,
     create_batch_artifacts,
@@ -51,7 +50,10 @@ def _validate_url(url, allowed_hosts):
         raise RegistryFetchError("Registry URL is outside the configured source hosts")
     if not fixture_mode and port not in {None, 443}:
         raise RegistryFetchError("Registry URL uses a nonstandard port")
-    return url
+    return parsed._replace(
+        path=quote(parsed.path, safe="/%:@!$&'()*+,;=-._~"),
+        query=quote(parsed.query, safe="=&?/:@!$'()*+,;%-._~"),
+    ).geturl()
 
 
 class _Links(HTMLParser):
@@ -125,8 +127,10 @@ def _open(url, allowed_hosts):
                 raise RegistryFetchError("Registry redirected too many times")
         except (OSError, HTTPException, TimeoutError) as error:
             if attempt:
+                host = urlparse(current_url).hostname
                 raise RegistryFetchError(
-                    "Registry request failed after retry"
+                    f"Registry request to {host} failed after retry "
+                    f"({type(error).__name__})"
                 ) from error
     raise RegistryFetchError("Registry request failed after retry")
 
@@ -193,9 +197,7 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
     run_id = str(uuid.UUID(run_id)) if run_id else str(uuid.uuid4())
     sha256 = hashlib.sha256(pdf).hexdigest()
     if s3_client is None:
-        s3_client = boto3.client(
-            "s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
-        )
+        s3_client = aws_client("s3")
     prefix = f"runs/{source}/{run_id}"
     manifest_key = f"pending/{source}/{run_id}/manifest.json"
     try:
@@ -210,10 +212,7 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
                 "A run ID cannot be reused for a different registry PDF"
             )
         if sqs_client is None:
-            sqs_client = boto3.client(
-                "sqs",
-                region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1"),
-            )
+            sqs_client = aws_client("sqs")
         return resume_dispatch(s3_client, sqs_client, queue_url, bucket, source, run_id)
 
     raw_key = f"raw/{source}/{sha256}.pdf"
@@ -252,9 +251,7 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
         ContentType="application/json",
     )
     if sqs_client is None:
-        sqs_client = boto3.client(
-            "sqs", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
-        )
+        sqs_client = aws_client("sqs")
     manifest_key = dispatch_batches(
         s3_client,
         sqs_client,
@@ -292,9 +289,8 @@ def handler(event, context):
         raise RegistryFetchError(
             "Configure FACILITY_SYNC_BUCKET and a FIFO GEOCODE_QUEUE_URL"
         )
-    region = os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
-    s3 = boto3.client("s3", region_name=region)
-    sqs = boto3.client("sqs", region_name=region)
+    s3 = aws_client("s3")
+    sqs = aws_client("sqs")
     if operation == "dispatch":
         try:
             run_id = str(uuid.UUID(event.get("run_id", "")))

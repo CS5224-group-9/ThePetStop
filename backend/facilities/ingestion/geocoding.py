@@ -11,8 +11,7 @@ from http.client import HTTPException, HTTPSConnection
 from urllib.parse import urlencode
 from uuid import UUID
 
-import boto3
-
+from facilities.ingestion.aws import client as aws_client
 from facilities.ingestion.finalize import finalize_if_complete
 
 RATE_STATE_KEY = "coordination/geocoding-worker.json"
@@ -191,14 +190,14 @@ def _load_rate_state(s3, bucket):
 
 def _reserve_request(s3, bucket, context):
     try:
-        requests_per_minute = float(os.environ.get("ONEMAP_REQUESTS_PER_MINUTE", "20"))
+        requests_per_minute = float(os.environ.get("ONEMAP_REQUESTS_PER_MINUTE", "75"))
     except ValueError as error:
         raise GeocoderConfigurationError(
             "ONEMAP_REQUESTS_PER_MINUTE must be numeric"
         ) from error
-    if not 1 <= requests_per_minute <= 60:
+    if not 1 <= requests_per_minute <= 75:
         raise GeocoderConfigurationError(
-            "ONEMAP_REQUESTS_PER_MINUTE must be between 1 and 60"
+            "ONEMAP_REQUESTS_PER_MINUTE must be between 1 and 75"
         )
 
     state = _load_rate_state(s3, bucket)
@@ -504,9 +503,7 @@ def handler(event, context):
     bucket = os.environ.get("FACILITY_SYNC_BUCKET")
     if not bucket:
         raise GeocoderConfigurationError("FACILITY_SYNC_BUCKET is required")
-    s3 = boto3.client(
-        "s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
-    )
+    s3 = aws_client("s3")
     records = event.get("Records")
     if not isinstance(records, list) or not records:
         raise GeocodeError("Expected an SQS event with at least one record")

@@ -6,11 +6,11 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import unquote_plus, urlparse
 from uuid import UUID, uuid5
 
-import boto3
 from django.db import transaction
 from django.utils import timezone as django_timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
+from facilities.ingestion.aws import client as aws_client
 from facilities.models import (
     Facility,
     FacilitySource,
@@ -447,9 +447,7 @@ def load_s3_event(event, s3_client=None):
     if not bucket:
         raise SnapshotValidationError("FACILITY_SYNC_BUCKET is required")
     if s3_client is None:
-        s3_client = boto3.client(
-            "s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
-        )
+        s3_client = aws_client("s3")
     records = event.get("Records")
     if not isinstance(records, list) or not records:
         raise SnapshotValidationError("Expected an S3 object-created event")
