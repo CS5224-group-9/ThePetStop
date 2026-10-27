@@ -1,12 +1,20 @@
 # Data model
 
+Facility ingestion now uses `FacilitySyncRun` and immutable `FacilitySyncEvent`
+rows for stage, activity, expected/completed batches, retries and safe errors.
+Run statuses include `review_required` for snapshots exceeding the configured
+deactivation threshold. Multiple runs may be tracked for one source; the loader
+serializes updates using `FacilitySourceState` and rejects stale snapshots.
+`Facility.licence_no` uses an empty string when the source supplies no licence.
+See [facility ingestion operations](facility-ingestion-operations.md).
+
 Django marketplace catalogue models are implemented; the remaining domain models are drafts. This file is the source of truth for models; the MVP Development Plan lists only model names and points here. Coordinate marketplace schema changes with D1 and D3, and update this file when a model changes.
 
 Each app's tables share one PostgreSQL schema with the app name as prefix (`pets_pet`, `marketplace_product`), which keeps the domains separate without custom schema routing.
 
 Owners: `accounts` A, `pets` B, `facilities` C, `marketplace` D2 for migrations and the catalogue, D3 for cart and orders, D1 for merchant writes. Agree models by **Fri 16 Oct** and refine them in Sprint 1.
 
-Last updated 2026-10-25.
+Last updated 2026-10-27.
 
 ## Conventions
 
@@ -36,7 +44,10 @@ Last updated 2026-10-25.
 
 | Model | Fields | Notes |
 | --- | --- | --- |
-| `Facility` | `facility_type` (vet, pet_shop), `name`, `licence_no`, `address`, `postal_code`, `latitude`, `longitude`, `phone`, `email`, `website`, `source` (for example "AVS registry of licensed pet shops"), `source_url`, `last_checked_at`, `active` | `latitude` and `longitude` are plain decimal fields; there is no PostGIS geometry column. Unique on (`facility_type`, `licence_no`). Index on (`latitude`, `longitude`) and on `postal_code`. Inactive rows stay for history but are never returned. |
+| `Facility` | `source_id` (vet, pet_shop), source-specific `source_key`, `facility_type`, `name`, optional `licence_no`, `address`, `postal_code`, `latitude`, `longitude`, `phone`, `email`, `website`, source label and registry/document URLs, publication date, `last_checked_at`, geocode status/query/provider/time, `active`, `last_seen_run` | Vet registry entries have no licence number, so identity is unique on (`source_id`, `source_key`); pet shops use AVS licence numbers as keys. `latitude` and `longitude` are nullable together; there is no PostGIS geometry column. Indexes support active/type, postal code and coordinates. Inactive rows remain for history. |
+| `FacilitySyncRun` | `run_id`, source, status (running, succeeded, failed, superseded), start/finish time, registry/document URLs, publication date, document SHA-256, parsed/inserted/updated/unchanged/deactivated/unlocated counts, safe error code/message | One active run per source. A successful run is the source snapshot; a failed parse or load must not replace the previous successful snapshot. Older snapshots are marked superseded. |
+| `FacilitySyncEvent` | event id, run, stage, kind, JSON detail, occurrence time | Staff-only operational history; never store credentials or private data in event detail. |
+| `FacilitySourceState` | source, latest successful run, `last_checked_at`, update time | Tracks current accepted source snapshot independently for vet and pet-shop registries. |
 
 ## marketplace (Feature 3)
 

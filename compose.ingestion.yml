@@ -1,0 +1,48 @@
+services:
+  db:
+    networks:
+      - default
+      - ingestion
+
+  floci:
+    image: floci/floci:latest
+    profiles: [ingestion]
+    ports:
+      - "4566:4566"
+    environment:
+      FLOCI_HOSTNAME: floci
+      FLOCI_SERVICES_LAMBDA_DOCKER_NETWORK: petstop-ingestion
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: ap-southeast-1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - ingestion
+
+  ingestion-db:
+    image: postgres:16
+    profiles: [ingestion-fixtures]
+    environment:
+      POSTGRES_DB: petstop_ingestion_test
+      POSTGRES_USER: petstop
+      POSTGRES_PASSWORD: petstop
+    ports: ["127.0.0.1:5434:5432"]
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U petstop -d petstop_ingestion_test"]
+      interval: 5s
+      retries: 10
+    networks: [ingestion]
+
+  fixtures:
+    image: petstop-backend:ingestion-local
+    profiles: [ingestion-fixtures]
+    entrypoint: [python, /fixtures/fixture_server.py]
+    volumes: ["./scripts/facilities:/fixtures:ro"]
+    ports: ["127.0.0.1:8080:8080"]
+    networks: [ingestion]
+
+networks:
+  ingestion:
+    name: petstop-ingestion

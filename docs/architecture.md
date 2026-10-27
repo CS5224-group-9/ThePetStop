@@ -99,6 +99,15 @@ A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so loc
 
 ## Current state
 
+Facility ingestion update (28 October 2026): the registry models and three main
+handlers are implemented, along with durable S3 status events, recovery/failure
+handlers, PostgreSQL history, snapshot review and deterministic Floci checks.
+The optional `PetStop-Dev-FacilityIngestion` CDK stack keeps schedules disabled.
+Only its loader enters the existing VPC; other workers retain internet access.
+See [the operations runbook](facility-ingestion-operations.md) for the current
+resource contract and outstanding AWS acceptance. Backend CI now runs Django
+tests with PostgreSQL and an isolated Floci recovery suite.
+
 Checked 2026-10-25 against the working tree.
 
 | Area | What exists |

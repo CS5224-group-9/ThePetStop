@@ -11,10 +11,20 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: petstop
+          POSTGRES_PASSWORD: petstop
+          POSTGRES_DB: petstop
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
     env:
       DJANGO_SECRET_KEY: ci-only-not-a-secret
-      # check doesn't connect; add credentials with a Postgres service for tests
-      DATABASE_URL: postgres://localhost:5432/petstop
+      DATABASE_URL: postgres://petstop:petstop@localhost:5432/petstop
     defaults:
       run:
         working-directory: backend
@@ -34,3 +44,38 @@ jobs:
 
       - name: Django system check
         run: uv run python manage.py check
+
+      - name: Django tests
+        run: uv run python manage.py test --noinput
+
+  ingestion-floci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project backend --locked
+      - name: Build ingestion image
+        run: docker build --platform linux/amd64 -t petstop-backend:ingestion-local backend
+      - name: Start isolated fixtures
+        run: docker compose -f docker-compose.yml -f compose.ingestion.yml --profile ingestion --profile ingestion-fixtures up -d floci ingestion-db fixtures
+      - name: Wait for local services
+        shell: bash
+        run: |
+          for i in $(seq 1 60); do
+            if curl --fail --silent --connect-timeout 2 --max-time 3 http://localhost:8080/health && docker compose -f docker-compose.yml -f compose.ingestion.yml exec -T ingestion-db pg_isready -U petstop && uv run --project backend python -c "import boto3; from botocore.config import Config; boto3.client('s3', endpoint_url='http://localhost:4566', aws_access_key_id='test', aws_secret_access_key='test', region_name='ap-southeast-1', config=Config(connect_timeout=2, read_timeout=3, retries={'max_attempts':0})).list_buckets()"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Provision fixture resources
+        run: uv run --project backend python scripts/facilities/bootstrap_local.py --endpoint-url http://localhost:4566 --image petstop-backend:ingestion-local --fixture-mode
+      - name: Verify event delivery and failure recovery
+        run: uv run --project backend python scripts/facilities/integration_fixtures.py
+      - name: Diagnostics
+        if: failure()
+        run: docker compose -f docker-compose.yml -f compose.ingestion.yml logs --tail 200
+      - name: Stop local services
+        if: always()
+        run: docker compose -f docker-compose.yml -f compose.ingestion.yml --profile ingestion --profile ingestion-fixtures down
