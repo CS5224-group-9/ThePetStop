@@ -51,8 +51,9 @@ Inside Floci-launched Lambda containers, use `http://floci:4566` for AWS API
 calls and `db:5432` for PostgreSQL. `localhost` inside a Lambda container points
 back to that container. The overlay puts Floci and PostgreSQL on the shared
 `petstop-ingestion` network and tells Floci to attach Lambda containers there.
-The ingestion handlers, fixture server and resource bootstrap are still
-planned, so this starts the network services only.
+The fetch handler now discovers and parses an AVS registry PDF and stores its
+artifacts in S3. Geocoding, queue dispatch, loading, the fixture server and
+resource bootstrap are still planned, so this starts the network services only.
 
 ### Check the Floci Lambda network
 
