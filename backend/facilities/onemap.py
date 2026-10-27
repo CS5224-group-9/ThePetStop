@@ -157,8 +157,15 @@ class OneMapClient:
                 continue
             if not (1.15 <= lat <= 1.5 and 103.55 <= lng <= 104.15):
                 continue
-            label = row.get("ADDRESS") or row.get("SEARCHVAL")
-            if not isinstance(label, str) or not label.strip() or label == "NIL":
+            label = next(
+                (
+                    value.strip()
+                    for value in (row.get("ADDRESS"), row.get("SEARCHVAL"))
+                    if isinstance(value, str) and value.strip() and value.strip() != "NIL"
+                ),
+                None,
+            )
+            if not label:
                 continue
             label = label.strip()[:500]
             key = (label, lat, lng)
