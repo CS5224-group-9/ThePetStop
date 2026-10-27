@@ -16,6 +16,7 @@ ACCOUNT_ID = "000000000000"
 BUCKET = "petstop-facility-sync-local"
 QUEUE = "petstop-geocode-local.fifo"
 DLQ = "petstop-geocode-local-dlq.fifo"
+FAILURES = "petstop-facility-invocation-failures-local"
 ROLE = "petstop-facility-ingestion-local"
 FUNCTIONS = {
     "fetch": ("petstop-facility-fetch-local", "facilities.ingestion.handlers.fetch"),
@@ -24,6 +25,14 @@ FUNCTIONS = {
         "facilities.ingestion.handlers.geocode",
     ),
     "load": ("petstop-facility-load-local", "facilities.ingestion.handlers.load"),
+    "reconcile": (
+        "petstop-facility-reconcile-local",
+        "facilities.ingestion.handlers.reconcile",
+    ),
+    "failure": (
+        "petstop-facility-failure-local",
+        "facilities.ingestion.handlers.failure",
+    ),
 }
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,6 +45,17 @@ def _local_endpoint(value):
         "::1",
     }:
         raise ValueError("Only an HTTP localhost Floci endpoint is allowed")
+    if (
+        parsed.port != 4566
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError(
+            "Use the local Floci API endpoint on port 4566 without a path or credentials"
+        )
     return value.rstrip("/")
 
 
@@ -64,12 +84,42 @@ def _wait_function(lambdas, name):
     raise TimeoutError(f"Timed out waiting for {name}")
 
 
+def _queue(sqs, name, attributes):
+    try:
+        url = sqs.get_queue_url(QueueName=name)["QueueUrl"]
+    except ClientError as error:
+        if error.response["Error"]["Code"] not in {
+            "AWS.SimpleQueueService.NonExistentQueue",
+            "QueueDoesNotExist",
+        }:
+            raise
+        return sqs.create_queue(QueueName=name, Attributes=attributes)
+    sqs.set_queue_attributes(
+        QueueUrl=url,
+        Attributes={
+            key: value for key, value in attributes.items() if key != "FifoQueue"
+        },
+    )
+    return {"QueueUrl": url}
+
+
 def main():
+    global BUCKET, QUEUE, DLQ, ROLE, FAILURES, FUNCTIONS
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--endpoint-url", required=True)
     parser.add_argument("--image", required=True)
+    parser.add_argument("--fixture-mode", action="store_true")
     args = parser.parse_args()
     endpoint = _local_endpoint(args.endpoint_url)
+    if args.fixture_mode:
+        BUCKET, QUEUE, DLQ, ROLE, FAILURES = (
+            name.replace("local", "fixture")
+            for name in (BUCKET, QUEUE, DLQ, ROLE, FAILURES)
+        )
+        FUNCTIONS = {
+            stage: (name.replace("-local", "-fixture"), handler)
+            for stage, (name, handler) in FUNCTIONS.items()
+        }
     if not args.image:
         raise ValueError("--image is required")
 
@@ -88,20 +138,33 @@ def main():
     s3 = session.client("s3", endpoint_url=endpoint, config=config)
     sqs = session.client("sqs", endpoint_url=endpoint, config=config)
     lambdas = session.client("lambda", endpoint_url=endpoint, config=config)
+    failure_url = _queue(
+        sqs, FAILURES, {"MessageRetentionPeriod": "1209600", "VisibilityTimeout": "900"}
+    )["QueueUrl"]
+    failure_arn = sqs.get_queue_attributes(
+        QueueUrl=failure_url, AttributeNames=["QueueArn"]
+    )["Attributes"]["QueueArn"]
 
-    dead_letter_url = sqs.create_queue(
-        QueueName=DLQ,
-        Attributes={"FifoQueue": "true", "ContentBasedDeduplication": "true"},
+    dead_letter_url = _queue(
+        sqs,
+        DLQ,
+        {
+            "FifoQueue": "true",
+            "ContentBasedDeduplication": "true",
+            "MessageRetentionPeriod": "1209600",
+        },
     )["QueueUrl"]
     dead_letter_arn = sqs.get_queue_attributes(
         QueueUrl=dead_letter_url, AttributeNames=["QueueArn"]
     )["Attributes"]["QueueArn"]
-    queue_url = sqs.create_queue(
-        QueueName=QUEUE,
-        Attributes={
+    queue_url = _queue(
+        sqs,
+        QUEUE,
+        {
             "FifoQueue": "true",
             "ContentBasedDeduplication": "true",
-            "VisibilityTimeout": "900",
+            "VisibilityTimeout": "90" if args.fixture_mode else "900",
+            "MessageRetentionPeriod": "345600",
             "RedrivePolicy": json.dumps(
                 {"deadLetterTargetArn": dead_letter_arn, "maxReceiveCount": "5"}
             ),
@@ -168,7 +231,7 @@ def main():
                             "sqs:GetQueueAttributes",
                             "sqs:ChangeMessageVisibility",
                         ],
-                        "Resource": queue_arn,
+                        "Resource": [queue_arn, failure_arn, dead_letter_arn],
                     },
                 ],
             }
@@ -176,8 +239,9 @@ def main():
     )
 
     local_env = dotenv_values(ROOT / "backend" / ".env")
-    if not (
-        local_env.get("ONEMAP_ACCESS_TOKEN")
+    if not args.fixture_mode and not (
+        local_env.get("ONEMAP_SECRET_ARN")
+        or local_env.get("ONEMAP_ACCESS_TOKEN")
         or (local_env.get("ONEMAP_EMAIL") and local_env.get("ONEMAP_PASSWORD"))
     ):
         raise ValueError("Set OneMap token or account credentials in backend/.env")
@@ -188,20 +252,57 @@ def main():
         "AWS_DEFAULT_REGION": "ap-southeast-1",
         "FACILITY_SYNC_BUCKET": BUCKET,
         "FACILITY_FIXTURE_MODE": "false",
+        "GEOCODE_QUEUE_URL": queue_url,
+        "GEOCODE_DLQ_URL": dead_letter_url.replace("localhost:4566", "floci:4566"),
     }
     db_env = {
         "DJANGO_SETTINGS_MODULE": "config.settings",
         "DJANGO_SECRET_KEY": "local-floci-only-secret",
         "DATABASE_URL": "postgresql://petstop:petstop@db:5432/petstop",
         "DJANGO_DEBUG": "false",
+        "FACILITY_MAX_DEACTIVATION_FRACTION": str(
+            local_env.get("FACILITY_MAX_DEACTIVATION_FRACTION", "0.2")
+        ),
     }
+    if args.fixture_mode:
+        common.update(
+            {
+                "FACILITY_FIXTURE_MODE": "true",
+                "FACILITY_SOURCE_CONFIG": json.dumps(
+                    {
+                        source: {
+                            "registry_url": f"http://fixtures:8080/{source}/registry"
+                        }
+                        for source in ("vet", "pet_shop")
+                    }
+                ),
+            }
+        )
+        db_env["DATABASE_URL"] = (
+            "postgresql://petstop:petstop@ingestion-db:5432/petstop_ingestion_test"
+        )
     geocode_env = {
         key: str(local_env[key])
         for key in ("ONEMAP_ACCESS_TOKEN", "ONEMAP_EMAIL", "ONEMAP_PASSWORD")
         if local_env.get(key)
     }
+    if args.fixture_mode:
+        geocode_env = {
+            "ONEMAP_ACCESS_TOKEN": "fixture-expired",
+            "ONEMAP_EMAIL": "fixture",
+            "ONEMAP_PASSWORD": "fixture",
+            "ONEMAP_FIXTURE_URL": "http://fixtures:8080",
+        }
+    elif local_env.get("ONEMAP_SECRET_ARN"):
+        geocode_env["ONEMAP_SECRET_ARN"] = local_env["ONEMAP_SECRET_ARN"]
     environments = {
-        "fetch": {**common, "GEOCODE_QUEUE_URL": queue_url},
+        "fetch": {
+            **common,
+            "GEOCODE_QUEUE_URL": queue_url,
+            "GEOCODE_BATCH_MAX_REQUESTS": str(
+                local_env.get("GEOCODE_BATCH_MAX_REQUESTS", "10")
+            ),
+        },
         "geocode": {
             **common,
             "GEOCODE_QUEUE_URL": queue_url,
@@ -209,8 +310,18 @@ def main():
                 local_env.get("ONEMAP_REQUESTS_PER_MINUTE", "75")
             ),
             **geocode_env,
+            "GEOCODE_CACHE_MAX_AGE_DAYS": str(
+                local_env.get("GEOCODE_CACHE_MAX_AGE_DAYS", "90")
+            ),
         },
         "load": {**common, **db_env},
+        "reconcile": {
+            **common,
+            "FACILITY_MAX_RUN_AGE_HOURS": str(
+                local_env.get("FACILITY_MAX_RUN_AGE_HOURS", "24")
+            ),
+        },
+        "failure": common,
     }
 
     for stage, (name, handler) in FUNCTIONS.items():
@@ -219,7 +330,11 @@ def main():
             "Role": role_arn,
             "Code": {"ImageUri": args.image},
             "ImageConfig": {"Command": [handler]},
-            "Timeout": 120 if stage == "geocode" else 60,
+            "Timeout": 15
+            if args.fixture_mode and stage == "geocode"
+            else 180
+            if stage in {"fetch", "reconcile"}
+            else 120,
             "MemorySize": 1024,
             "Environment": {"Variables": environments[stage]},
         }
@@ -239,6 +354,18 @@ def main():
             _wait_function(lambdas, name)
             lambdas.update_function_code(FunctionName=name, ImageUri=args.image)
         _wait_function(lambdas, name)
+        if stage in {"fetch", "load", "reconcile"}:
+            lambdas.put_function_event_invoke_config(
+                FunctionName=name,
+                MaximumRetryAttempts=2,
+                MaximumEventAgeInSeconds=3600,
+                DestinationConfig={"OnFailure": {"Destination": failure_arn}},
+            )
+        if stage in {"reconcile", "load"}:
+            lambdas.put_function_concurrency(
+                FunctionName=name,
+                ReservedConcurrentExecutions=2 if stage == "load" else 1,
+            )
 
     mappings = lambdas.list_event_source_mappings(
         FunctionName=FUNCTIONS["geocode"][0], EventSourceArn=queue_arn
@@ -271,6 +398,15 @@ def main():
     load_arn = lambdas.get_function(FunctionName=FUNCTIONS["load"][0])["Configuration"][
         "FunctionArn"
     ]
+    if not lambdas.list_event_source_mappings(
+        FunctionName=FUNCTIONS["failure"][0], EventSourceArn=failure_arn
+    )["EventSourceMappings"]:
+        lambdas.create_event_source_mapping(
+            FunctionName=FUNCTIONS["failure"][0],
+            EventSourceArn=failure_arn,
+            BatchSize=1,
+            Enabled=True,
+        )
     _ignore_existing(
         lambda: lambdas.add_permission(
             FunctionName=FUNCTIONS["load"][0],
@@ -293,7 +429,15 @@ def main():
                     "Filter": {
                         "Key": {"FilterRules": [{"Name": "prefix", "Value": "ready/"}]}
                     },
-                }
+                },
+                {
+                    "Id": "facility-status-local",
+                    "LambdaFunctionArn": load_arn,
+                    "Events": ["s3:ObjectCreated:*"],
+                    "Filter": {
+                        "Key": {"FilterRules": [{"Name": "prefix", "Value": "status/"}]}
+                    },
+                },
             ]
         },
     )

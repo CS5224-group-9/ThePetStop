@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from uuid import uuid4
 
 import boto3
 from dotenv import load_dotenv
@@ -28,7 +29,12 @@ def main():
     parser.add_argument("--endpoint-url", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=3600)
     parser.add_argument("--source", choices=("vet", "pet_shop", "both"), default="both")
+    parser.add_argument(
+        "--run-id", help="Resume an existing run (requires a single source)"
+    )
     args = parser.parse_args()
+    if args.run_id and args.source == "both":
+        parser.error("--run-id requires --source vet or --source pet_shop")
     if args.endpoint_url != "http://localhost:4566":
         raise ValueError("The integration runner only permits local Floci")
     session = boto3.Session(
@@ -40,10 +46,14 @@ def main():
     sources = ("vet", "pet_shop") if args.source == "both" else (args.source,)
     runs = {}
     for source in sources:
+        run_id = args.run_id or str(uuid4())
+        print(f"{source}: run_id={run_id}", flush=True)
         result = lambdas.invoke(
             FunctionName="petstop-facility-fetch-local",
             InvocationType="RequestResponse",
-            Payload=json.dumps({"operation": "start", "source": source}).encode(),
+            Payload=json.dumps(
+                {"operation": "start", "source": source, "run_id": run_id}
+            ).encode(),
         )
         payload = json.loads(result["Payload"].read() or b"{}")
         if result.get("FunctionError"):
@@ -59,7 +69,11 @@ def main():
             source: FacilitySyncRun.objects.filter(run_id=run_id).first()
             for source, run_id in runs.items()
         }
-        failed = [row for row in rows.values() if row and row.status == "failed"]
+        failed = [
+            row
+            for row in rows.values()
+            if row and row.status in {"failed", "review_required"}
+        ]
         if failed:
             details = [
                 {
