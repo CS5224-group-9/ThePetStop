@@ -2,10 +2,10 @@ import hashlib
 import json
 import os
 import uuid
+from datetime import UTC, datetime
 from html.parser import HTMLParser
-from urllib.error import HTTPError, URLError
+from http.client import HTTPConnection, HTTPException, HTTPSConnection
 from urllib.parse import urljoin, urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import boto3
 
@@ -39,21 +39,19 @@ def _allowed_hosts():
 
 def _validate_url(url, allowed_hosts):
     parsed = urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise RegistryFetchError("Registry URL has an invalid port") from error
     allowed_schemes = {"https"}
-    if os.environ.get("FACILITY_FIXTURE_MODE", "").lower() == "true":
+    fixture_mode = os.environ.get("FACILITY_FIXTURE_MODE", "").lower() == "true"
+    if fixture_mode:
         allowed_schemes.add("http")
     if parsed.scheme not in allowed_schemes or parsed.hostname not in allowed_hosts:
         raise RegistryFetchError("Registry URL is outside the configured source hosts")
+    if not fixture_mode and port not in {None, 443}:
+        raise RegistryFetchError("Registry URL uses a nonstandard port")
     return url
-
-
-class _SafeRedirects(HTTPRedirectHandler):
-    def __init__(self, allowed_hosts):
-        self.allowed_hosts = allowed_hosts
-
-    def redirect_request(self, request, response, code, message, headers, new_url):
-        _validate_url(new_url, self.allowed_hosts)
-        return super().redirect_request(request, response, code, message, headers, new_url)
 
 
 class _Links(HTMLParser):
@@ -78,48 +76,91 @@ class _Links(HTMLParser):
 
 
 def _open(url, allowed_hosts):
-    _validate_url(url, allowed_hosts)
-    opener = build_opener(_SafeRedirects(allowed_hosts))
-    last_error = None
+    current_url = _validate_url(url, allowed_hosts)
     for attempt in range(2):
         try:
-            request = Request(url, headers={"User-Agent": "ThePetStop facility registry sync"})
-            with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
-                final_url = _validate_url(response.geturl(), allowed_hosts)
-                content = response.read(MAX_RESPONSE_BYTES + 1)
-                if len(content) > MAX_RESPONSE_BYTES:
-                    raise RegistryFetchError("Registry response exceeds the size limit")
-                return final_url, content
-        except HTTPError as error:
-            if error.code < 500 or attempt:
-                raise RegistryFetchError(f"Registry returned HTTP {error.code}") from error
-            last_error = error
-        except (URLError, TimeoutError) as error:
-            last_error = error
+            for _ in range(4):
+                parsed = urlparse(current_url)
+                connection_type = (
+                    HTTPSConnection if parsed.scheme == "https" else HTTPConnection
+                )
+                connection = connection_type(
+                    parsed.hostname, parsed.port, timeout=TIMEOUT_SECONDS
+                )
+                path = parsed.path or "/"
+                if parsed.query:
+                    path += f"?{parsed.query}"
+                try:
+                    connection.request(
+                        "GET",
+                        path,
+                        headers={"User-Agent": "ThePetStop facility registry sync"},
+                    )
+                    response = connection.getresponse()
+                    if response.status in {301, 302, 303, 307, 308}:
+                        location = response.getheader("Location")
+                        if not location:
+                            raise RegistryFetchError(
+                                "Registry redirect has no location"
+                            )
+                        current_url = _validate_url(
+                            urljoin(current_url, location), allowed_hosts
+                        )
+                        continue
+                    if response.status != 200:
+                        if response.status >= 500 and attempt == 0:
+                            break
+                        raise RegistryFetchError(
+                            f"Registry returned HTTP {response.status}"
+                        )
+                    content = response.read(MAX_RESPONSE_BYTES + 1)
+                    if len(content) > MAX_RESPONSE_BYTES:
+                        raise RegistryFetchError(
+                            "Registry response exceeds the size limit"
+                        )
+                    return current_url, content
+                finally:
+                    connection.close()
+            else:
+                raise RegistryFetchError("Registry redirected too many times")
+        except (OSError, HTTPException, TimeoutError) as error:
             if attempt:
-                break
-    raise RegistryFetchError("Registry request failed after retry") from last_error
+                raise RegistryFetchError(
+                    "Registry request failed after retry"
+                ) from error
+    raise RegistryFetchError("Registry request failed after retry")
 
 
 def _source_config():
     config = json.loads(os.environ.get("FACILITY_SOURCE_CONFIG", "{}"))
-    sources = {**{key: {"registry_url": value} for key, value in DEFAULT_SOURCES.items()}, **config}
+    sources = {
+        **{key: {"registry_url": value} for key, value in DEFAULT_SOURCES.items()},
+        **config,
+    }
     return sources
 
 
 def _find_pdf(html, page_url, source, allowed_hosts):
     links = _Links()
     links.feed(html)
-    terms = ("vet", "veterinary") if source == "vet" else ("pet shop", "pet-shop", "petshop")
+    terms = (
+        ("vet", "veterinary")
+        if source == "vet"
+        else ("pet shop", "pet-shop", "petshop")
+    )
     matches = []
     for link in links.links:
         href = link["href"].strip()
         label = f"{link['text']} {href}".lower()
-        if ".pdf" in urlparse(href).path.lower() and any(term in label for term in terms):
+        if ".pdf" in urlparse(href).path.lower() and any(
+            term in label for term in terms
+        ):
             matches.append(_validate_url(urljoin(page_url, href), allowed_hosts))
     matches = list(dict.fromkeys(matches))
     if len(matches) != 1:
-        raise RegistryFetchError(f"Expected one {source} registry PDF link; found {len(matches)}")
+        raise RegistryFetchError(
+            f"Expected one {source} registry PDF link; found {len(matches)}"
+        )
     return matches[0]
 
 
@@ -129,7 +170,9 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
     bucket = os.environ.get("FACILITY_SYNC_BUCKET")
     queue_url = os.environ.get("GEOCODE_QUEUE_URL")
     if not bucket or not queue_url or not queue_url.endswith(".fifo"):
-        raise RegistryFetchError("Configure FACILITY_SYNC_BUCKET and a FIFO GEOCODE_QUEUE_URL")
+        raise RegistryFetchError(
+            "Configure FACILITY_SYNC_BUCKET and a FIFO GEOCODE_QUEUE_URL"
+        )
     try:
         batch_size = batch_size_from_environment()
     except ValueError as error:
@@ -140,7 +183,9 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
     allowed_hosts = _allowed_hosts()
     registry_url = config[source]["registry_url"]
     page_url, page = _open(registry_url, allowed_hosts)
-    document_url = _find_pdf(page.decode("utf-8", errors="replace"), page_url, source, allowed_hosts)
+    document_url = _find_pdf(
+        page.decode("utf-8", errors="replace"), page_url, source, allowed_hosts
+    )
     _, pdf = _open(document_url, allowed_hosts)
     if not pdf.startswith(b"%PDF-"):
         raise RegistryFetchError("AVS registry download is not a PDF")
@@ -161,14 +206,15 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
         existing_manifest = None
     if existing_manifest is not None:
         if existing_manifest.get("document_sha256") != sha256:
-            raise RegistryFetchError("A run ID cannot be reused for a different registry PDF")
+            raise RegistryFetchError(
+                "A run ID cannot be reused for a different registry PDF"
+            )
         if sqs_client is None:
             sqs_client = boto3.client(
-                "sqs", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
+                "sqs",
+                region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1"),
             )
-        return resume_dispatch(
-            s3_client, sqs_client, queue_url, bucket, source, run_id
-        )
+        return resume_dispatch(s3_client, sqs_client, queue_url, bucket, source, run_id)
 
     raw_key = f"raw/{source}/{sha256}.pdf"
     s3_client.put_object(
@@ -180,6 +226,7 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
     )
 
     records = parse_registry_pdf(pdf, source)
+    retrieved_at = datetime.now(UTC).isoformat()
     batches, batch_keys, batch_versions = create_batch_artifacts(
         s3_client, bucket, source, run_id, records, batch_size
     )
@@ -191,6 +238,7 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
         "document_url": document_url,
         "document_sha256": sha256,
         "raw_key": raw_key,
+        "retrieved_at": retrieved_at,
         "parsed_count": len(records),
         "parser_version": "1",
         "expected_batch_ids": [batch["batch_id"] for batch in batches],
@@ -241,7 +289,9 @@ def handler(event, context):
     bucket = os.environ.get("FACILITY_SYNC_BUCKET")
     queue_url = os.environ.get("GEOCODE_QUEUE_URL")
     if not bucket or not queue_url or not queue_url.endswith(".fifo"):
-        raise RegistryFetchError("Configure FACILITY_SYNC_BUCKET and a FIFO GEOCODE_QUEUE_URL")
+        raise RegistryFetchError(
+            "Configure FACILITY_SYNC_BUCKET and a FIFO GEOCODE_QUEUE_URL"
+        )
     region = os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
     s3 = boto3.client("s3", region_name=region)
     sqs = boto3.client("sqs", region_name=region)

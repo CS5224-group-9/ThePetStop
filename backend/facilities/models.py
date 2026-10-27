@@ -15,6 +15,7 @@ class FacilitySyncRun(models.Model):
         RUNNING = "running", "Running"
         SUCCEEDED = "succeeded", "Succeeded"
         FAILED = "failed", "Failed"
+        SUPERSEDED = "superseded", "Superseded"
 
     run_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source = models.CharField(max_length=16, choices=FacilitySource.choices)

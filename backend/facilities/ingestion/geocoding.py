@@ -2,19 +2,19 @@ import hashlib
 import json
 import math
 import os
-import random
 import re
+import secrets
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from urllib.error import HTTPError, URLError
+from http.client import HTTPException, HTTPSConnection
 from urllib.parse import urlencode
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
 import boto3
 
-ONEMAP_URL = "https://www.onemap.gov.sg"
+from facilities.ingestion.finalize import finalize_if_complete
+
 RATE_STATE_KEY = "coordination/geocoding-worker.json"
 MAX_RESPONSE_BYTES = 1_000_000
 SINGAPORE_BOUNDS = (1.15, 1.5, 103.55, 104.15)
@@ -44,11 +44,6 @@ class _TokenRejected(GeocodeError):
     pass
 
 
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, request, response, code, message, headers, new_url):
-        raise GeocodeError("OneMap unexpectedly redirected the request")
-
-
 def _read_json(s3, bucket, key, version=None):
     params = {"Bucket": bucket, "Key": key}
     if version:
@@ -76,7 +71,9 @@ def _token_value(force_refresh=False):
     email = os.environ.get("ONEMAP_EMAIL", "").strip()
     password = os.environ.get("ONEMAP_PASSWORD", "")
     if not email or not password:
-        raise GeocoderConfigurationError("Configure OneMap token or account credentials")
+        raise GeocoderConfigurationError(
+            "Configure OneMap token or account credentials"
+        )
     try:
         payload = _request(
             "/api/auth/post/getToken",
@@ -84,7 +81,9 @@ def _token_value(force_refresh=False):
             body={"email": email, "password": password},
         )
     except _TokenRejected as error:
-        raise GeocoderConfigurationError("OneMap rejected the configured credentials") from error
+        raise GeocoderConfigurationError(
+            "OneMap rejected the configured credentials"
+        ) from error
     except _UpstreamError as error:
         if error.status == 429 or error.status >= 500:
             raise RetryableGeocodeError(str(error)) from error
@@ -97,7 +96,9 @@ def _token_value(force_refresh=False):
         if float(expiry) <= time.time():
             raise ValueError
     except (TypeError, ValueError):
-        raise GeocoderConfigurationError("OneMap returned an invalid access token") from None
+        raise GeocoderConfigurationError(
+            "OneMap returned an invalid access token"
+        ) from None
     _token = access_token.strip()
     return _token
 
@@ -110,25 +111,31 @@ def _request(path, *, method="GET", token=None, body=None):
     if body is not None:
         headers["Content-Type"] = "application/json"
         data = json.dumps(body).encode("utf-8")
-    request = Request(ONEMAP_URL + path, data=data, headers=headers, method=method)
-    opener = build_opener(_NoRedirect())
+    connection = HTTPSConnection("www.onemap.gov.sg", timeout=8)
     try:
-        with opener.open(request, timeout=8) as response:
-            payload = response.read(MAX_RESPONSE_BYTES + 1)
-            if len(payload) > MAX_RESPONSE_BYTES:
-                raise GeocodeError("OneMap response exceeds the size limit")
-            result = json.loads(payload)
-            if not isinstance(result, dict):
-                raise GeocodeError("OneMap response is not a JSON object")
-            return result
-    except HTTPError as error:
-        if error.code in {401, 403}:
+        connection.request(method, path, body=data, headers=headers)
+        response = connection.getresponse()
+        if response.status in {301, 302, 303, 307, 308}:
+            raise GeocodeError("OneMap unexpectedly redirected the request")
+        if response.status in {401, 403}:
             raise _TokenRejected from None
-        raise _UpstreamError(error.code, error.headers.get("Retry-After")) from None
-    except (URLError, TimeoutError, OSError) as error:
+        if response.status != 200:
+            raise _UpstreamError(
+                response.status, response.getheader("Retry-After")
+            ) from None
+        payload = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(payload) > MAX_RESPONSE_BYTES:
+            raise GeocodeError("OneMap response exceeds the size limit")
+        result = json.loads(payload)
+        if not isinstance(result, dict):
+            raise GeocodeError("OneMap response is not a JSON object")
+        return result
+    except (TimeoutError, OSError, HTTPException) as error:
         raise RetryableGeocodeError("OneMap request failed temporarily") from error
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise RetryableGeocodeError("OneMap returned invalid JSON") from error
+    finally:
+        connection.close()
 
 
 def _search(query, before_request):
@@ -153,7 +160,9 @@ def _search(query, before_request):
             return rows
         except _TokenRejected:
             if attempt:
-                raise GeocoderConfigurationError("OneMap rejected the refreshed token") from None
+                raise GeocoderConfigurationError(
+                    "OneMap rejected the refreshed token"
+                ) from None
             token = _token_value(force_refresh=True)
     raise GeocoderConfigurationError("OneMap authentication failed")
 
@@ -166,11 +175,11 @@ def _retry_after_seconds(value, receive_count):
             try:
                 retry_at = parsedate_to_datetime(value)
                 if retry_at.tzinfo is None:
-                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                    retry_at = retry_at.replace(tzinfo=UTC)
                 return max(1, int(retry_at.timestamp() - time.time()))
             except (TypeError, ValueError, OverflowError):
                 pass
-    return min(300, 2 ** min(receive_count, 8)) + random.randint(0, 2)
+    return min(300, 2 ** min(receive_count, 8)) + secrets.randbelow(3)
 
 
 def _load_rate_state(s3, bucket):
@@ -184,13 +193,19 @@ def _reserve_request(s3, bucket, context):
     try:
         requests_per_minute = float(os.environ.get("ONEMAP_REQUESTS_PER_MINUTE", "20"))
     except ValueError as error:
-        raise GeocoderConfigurationError("ONEMAP_REQUESTS_PER_MINUTE must be numeric") from error
+        raise GeocoderConfigurationError(
+            "ONEMAP_REQUESTS_PER_MINUTE must be numeric"
+        ) from error
     if not 1 <= requests_per_minute <= 60:
-        raise GeocoderConfigurationError("ONEMAP_REQUESTS_PER_MINUTE must be between 1 and 60")
+        raise GeocoderConfigurationError(
+            "ONEMAP_REQUESTS_PER_MINUTE must be between 1 and 60"
+        )
 
     state = _load_rate_state(s3, bucket)
     now = time.time()
-    next_at = max(float(state.get("next_request_at", 0)), float(state.get("cooldown_until", 0)))
+    next_at = max(
+        float(state.get("next_request_at", 0)), float(state.get("cooldown_until", 0))
+    )
     wait_seconds = max(0, next_at - now)
     remaining = context.get_remaining_time_in_millis() / 1000 if context else 60
     if wait_seconds + 2 >= remaining:
@@ -222,7 +237,10 @@ def _defer_after_throttle(s3, bucket, error, receive_count):
 def _valid_match(rows, postal_code):
     south, north, west, east = SINGAPORE_BOUNDS
     for row in rows:
-        if not isinstance(row, dict) or str(row.get("POSTAL", "")).zfill(6) != postal_code:
+        if (
+            not isinstance(row, dict)
+            or str(row.get("POSTAL", "")).zfill(6) != postal_code
+        ):
             continue
         try:
             latitude = float(row["LATITUDE"])
@@ -271,9 +289,11 @@ def _result_for_query(s3, bucket, query, context, receive_count):
             or result.get("status") not in {"resolved", "unlocated"}
         ):
             raise GeocodeError("Saved query result does not match its query identity")
-        if result["status"] == "resolved" and _valid_coordinates(
-            result.get("latitude"), result.get("longitude")
-        ) is None:
+        if (
+            result["status"] == "resolved"
+            and _valid_coordinates(result.get("latitude"), result.get("longitude"))
+            is None
+        ):
             raise GeocodeError("Saved query result has invalid coordinates")
         if result["status"] == "unlocated" and (
             result.get("latitude") is not None or result.get("longitude") is not None
@@ -308,16 +328,20 @@ def _result_for_query(s3, bucket, query, context, receive_count):
         except _UpstreamError as error:
             if error.status == 429:
                 _defer_after_throttle(s3, bucket, error, receive_count)
-                raise RetryableGeocodeError("OneMap rate limited the geocoding request") from error
+                raise RetryableGeocodeError(
+                    "OneMap rate limited the geocoding request"
+                ) from error
             if error.status >= 500:
                 raise RetryableGeocodeError(str(error)) from error
-            raise GeocodeError(f"OneMap rejected a geocoding request ({error.status})") from error
+            raise GeocodeError(
+                f"OneMap rejected a geocoding request ({error.status})"
+            ) from error
         coordinates = _valid_match(rows, postal_code)
         if coordinates:
             matched_query = search_value
             break
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     if coordinates:
         latitude, longitude = coordinates
         result = {
@@ -358,8 +382,10 @@ def process_batch(message, s3, context=None, receive_count=1):
     if not bucket:
         raise GeocoderConfigurationError("FACILITY_SYNC_BUCKET is required")
     required = ("run_id", "source", "batch_id", "manifest_key", "batch_key")
-    if not isinstance(message, dict) or message.get("schema_version") != 1 or any(
-        not message.get(key) for key in required
+    if (
+        not isinstance(message, dict)
+        or message.get("schema_version") != 1
+        or any(not message.get(key) for key in required)
     ):
         raise GeocodeError("Queue message is missing required batch fields")
 
@@ -385,14 +411,17 @@ def process_batch(message, s3, context=None, receive_count=1):
     except s3.exceptions.NoSuchKey:
         complete = None
 
-    manifest = _read_json(s3, bucket, message["manifest_key"], message.get("manifest_version"))
+    manifest = _read_json(
+        s3, bucket, message["manifest_key"], message.get("manifest_version")
+    )
     if (
         manifest.get("run_id") != run_id
         or manifest.get("schema_version") != 1
         or manifest.get("source") != source
         or batch_id not in manifest.get("expected_batch_ids", [])
         or manifest.get("batch_keys", {}).get(batch_id) != message["batch_key"]
-        or manifest.get("batch_versions", {}).get(batch_id) != message.get("batch_version")
+        or manifest.get("batch_versions", {}).get(batch_id)
+        != message.get("batch_version")
     ):
         raise GeocodeError("Queue message does not match its persisted run manifest")
     batch = _read_json(s3, bucket, message["batch_key"], message.get("batch_version"))
@@ -419,7 +448,8 @@ def process_batch(message, s3, context=None, receive_count=1):
         if (
             not isinstance(postal_code, str)
             or not re.fullmatch(r"\d{6}", postal_code)
-            or query["query_id"] != hashlib.sha256(postal_code.encode("ascii")).hexdigest()
+            or query["query_id"]
+            != hashlib.sha256(postal_code.encode("ascii")).hexdigest()
             or not isinstance(query["address"], str)
             or len(query["address"]) > 500
         ):
@@ -434,6 +464,11 @@ def process_batch(message, s3, context=None, receive_count=1):
             and complete.get("run_id") == run_id
             and complete.get("completed_query_ids") == query_ids
         ):
+            ready_key = finalize_if_complete(
+                s3, bucket, source, run_id, message["manifest_key"]
+            )
+            if ready_key:
+                complete["ready_key"] = ready_key
             return complete
         raise GeocodeError("Saved batch completion marker does not match its artifact")
 
@@ -454,9 +489,14 @@ def process_batch(message, s3, context=None, receive_count=1):
         "source": source,
         "batch_id": batch_id,
         "completed_query_ids": results,
-        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": datetime.now(UTC).isoformat(),
     }
     _put_json(s3, bucket, complete_key, complete)
+    ready_key = finalize_if_complete(
+        s3, bucket, source, run_id, message["manifest_key"]
+    )
+    if ready_key:
+        complete["ready_key"] = ready_key
     return complete
 
 
@@ -464,7 +504,9 @@ def handler(event, context):
     bucket = os.environ.get("FACILITY_SYNC_BUCKET")
     if not bucket:
         raise GeocoderConfigurationError("FACILITY_SYNC_BUCKET is required")
-    s3 = boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1"))
+    s3 = boto3.client(
+        "s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "ap-southeast-1")
+    )
     records = event.get("Records")
     if not isinstance(records, list) or not records:
         raise GeocodeError("Expected an SQS event with at least one record")
@@ -472,7 +514,9 @@ def handler(event, context):
     for record in records:
         try:
             message = json.loads(record["body"])
-            receive_count = int(record.get("attributes", {}).get("ApproximateReceiveCount", "1"))
+            receive_count = int(
+                record.get("attributes", {}).get("ApproximateReceiveCount", "1")
+            )
             results.append(process_batch(message, s3, context, receive_count))
         except (KeyError, TypeError, ValueError) as error:
             raise GeocodeError("Invalid SQS geocoding record") from error

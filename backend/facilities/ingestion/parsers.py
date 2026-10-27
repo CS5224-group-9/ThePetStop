@@ -25,7 +25,9 @@ def _clean(value):
 
 
 def _parts(*values):
-    return [_clean(value) for value in values if _clean(value).upper() not in PLACEHOLDERS]
+    return [
+        _clean(value) for value in values if _clean(value).upper() not in PLACEHOLDERS
+    ]
 
 
 def _address(*values):
@@ -65,7 +67,11 @@ def _vet_records(pdf):
                     raise RegistryParseError(f"Veterinary row {serial} is incomplete")
 
                 postal = next(
-                    (match.group(1) for cell in cells if (match := POSTAL_CODE.search(cell))),
+                    (
+                        match.group(1)
+                        for cell in cells
+                        if (match := POSTAL_CODE.search(cell))
+                    ),
                     text_postcodes.get(serial, ""),
                 )
                 name = cells[1]
@@ -80,10 +86,15 @@ def _vet_records(pdf):
                     if unit and unit.upper() not in PLACEHOLDERS:
                         unit_text += f"-{unit}"
                 address = _address(
-                    f"{block} {street}".strip(), building, unit_text, f"Singapore {postal}"
+                    f"{block} {street}".strip(),
+                    building,
+                    unit_text,
+                    f"Singapore {postal}",
                 )
                 if not name or not postal or not address:
-                    raise RegistryParseError(f"Veterinary row {serial} lacks a name, address, or postal code")
+                    raise RegistryParseError(
+                        f"Veterinary row {serial} lacks a name, address, or postal code"
+                    )
 
                 records.append(
                     {
@@ -99,7 +110,9 @@ def _vet_records(pdf):
 
     serials = [int(record_serial) for record_serial in _vet_serials(pdf)]
     if not records or serials != list(range(1, len(serials) + 1)):
-        raise RegistryParseError("Veterinary registry is empty or its serial sequence has gaps")
+        raise RegistryParseError(
+            "Veterinary registry is empty or its serial sequence has gaps"
+        )
     return records
 
 
@@ -122,7 +135,9 @@ def _pet_shop_records(pdf):
                     continue
                 cells = [_clean(cell) for cell in row]
                 if len(cells) < 8:
-                    raise RegistryParseError(f"Pet shop {cells[0]} has an incomplete row")
+                    raise RegistryParseError(
+                        f"Pet shop {cells[0]} has an incomplete row"
+                    )
                 licence_no, name = cells[0], cells[1]
                 postal = POSTAL_CODE.search(cells[7])
                 address = _address(
@@ -132,7 +147,9 @@ def _pet_shop_records(pdf):
                     f"Singapore {postal.group(1)}" if postal else "",
                 )
                 if not name or not postal or not address:
-                    raise RegistryParseError(f"Pet shop {licence_no} lacks a name, address, or postal code")
+                    raise RegistryParseError(
+                        f"Pet shop {licence_no} lacks a name, address, or postal code"
+                    )
                 records.append(
                     {
                         "source_id": PET_SHOP,
@@ -146,7 +163,9 @@ def _pet_shop_records(pdf):
                 )
 
     if not records or len({record["source_key"] for record in records}) != len(records):
-        raise RegistryParseError("Pet-shop registry is empty or contains duplicate licences")
+        raise RegistryParseError(
+            "Pet-shop registry is empty or contains duplicate licences"
+        )
     return records
 
 
@@ -157,11 +176,7 @@ def parse_registry_pdf(content, source):
         raise RegistryParseError(f"Unsupported AVS source: {source}")
     try:
         with pdfplumber.open(BytesIO(content)) as pdf:
-            records = (
-                _vet_records(pdf)
-                if source == VET
-                else _pet_shop_records(pdf)
-            )
+            records = _vet_records(pdf) if source == VET else _pet_shop_records(pdf)
     except RegistryParseError:
         raise
     except Exception as error:

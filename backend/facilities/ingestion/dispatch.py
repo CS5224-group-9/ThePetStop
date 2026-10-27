@@ -13,7 +13,11 @@ def make_batches(records, batch_size):
         record["geocode_query_id"] = query_id
         queries.setdefault(
             query_id,
-            {"query_id": query_id, "postal_code": postal_code, "address": record["address"]},
+            {
+                "query_id": query_id,
+                "postal_code": postal_code,
+                "address": record["address"],
+            },
         )
 
     ordered_queries = [queries[key] for key in sorted(queries)]
