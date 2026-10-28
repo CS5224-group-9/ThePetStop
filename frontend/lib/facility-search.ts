@@ -1,13 +1,17 @@
 import type { Facility } from "./api/types.ts";
+import type { ApprovedAnimal } from "./facility-animals.ts";
 
 export function filterFacilities(
   facilities: Facility[],
-  filters: { query: string; type: string },
+  filters: { query: string; type: string; animal?: ApprovedAnimal | "" },
 ): Facility[] {
   const query = filters.query.trim().toLowerCase();
   return facilities.filter(
     (facility) =>
       (!filters.type || facility.type === filters.type) &&
+      (!filters.animal ||
+        (facility.type === "Pet shop" &&
+          facility.approved_animals?.includes(filters.animal))) &&
       `${facility.name} ${facility.area} ${facility.address}`
         .toLowerCase()
         .includes(query),
@@ -42,7 +46,7 @@ export function distanceKm(from: Coordinates, to: Coordinates): number | null {
 
 export function nearbyFacilities(
   facilities: Facility[],
-  filters: { type: string },
+  filters: { type: string; animal?: ApprovedAnimal | "" },
   centre: Coordinates | null,
   radiusKm: number | null,
 ): (Facility & { distance_km: number | null })[] {

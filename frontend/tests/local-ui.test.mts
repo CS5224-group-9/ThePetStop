@@ -16,6 +16,7 @@ import type { Facility } from "../lib/api/types.ts";
 const facilityFixtures: Facility[] = [
   {
     id: "test-vet",
+    approved_animals: null,
     name: "Bishan Test Vet",
     type: "Veterinary centre",
     address: "1 Bishan Road",
@@ -32,6 +33,7 @@ const facilityFixtures: Facility[] = [
   },
   {
     id: "test-shop",
+    approved_animals: ["cat", "dog"],
     name: "Test Pet Shop",
     type: "Pet shop",
     address: "2 Bishan Road",
@@ -257,6 +259,49 @@ test("straight-line distance handles known distances and invalid coordinates", (
   assert.equal(
     distanceKm({ latitude: 91, longitude: 0 }, { latitude: 0, longitude: 0 }),
     null,
+  );
+});
+
+test("animal filters show only pet shops with explicit approvals and combine with radius", () => {
+  const rows = [
+    ...facilityFixtures,
+    { ...facilityFixtures[1], id: "unknown", approved_animals: null },
+  ];
+  assert.deepEqual(
+    filterFacilities(rows, { query: "", type: "Pet shop", animal: "cat" }).map(
+      (f) => f.id,
+    ),
+    ["test-shop"],
+  );
+  assert.deepEqual(
+    filterFacilities(rows, { query: "", type: "Pet shop", animal: "bird" }),
+    [],
+  );
+  assert.deepEqual(
+    filterFacilities(rows, {
+      query: "",
+      type: "Veterinary centre",
+      animal: "cat",
+    }),
+    [],
+  );
+  assert.deepEqual(
+    nearbyFacilities(
+      rows,
+      { type: "Pet shop", animal: "cat" },
+      { latitude: 1.35, longitude: 103.83 },
+      1,
+    ).map((f) => f.id),
+    ["test-shop"],
+  );
+  assert.deepEqual(
+    nearbyFacilities(
+      rows,
+      { type: "Pet shop", animal: "cat" },
+      { latitude: 1.35, longitude: 103.83 },
+      0.01,
+    ),
+    [],
   );
 });
 

@@ -6,7 +6,7 @@ import {
   transferPrivateFile,
 } from "../lib/api/client.ts";
 import { createServices } from "../lib/api/services.ts";
-import { order, product } from "../lib/api/adapters.ts";
+import { facility, order, product } from "../lib/api/adapters.ts";
 import { nextPath, safeExternalUrl } from "../lib/format.ts";
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -14,6 +14,25 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 const origin = "https://api.example.test/api/v1/";
+test("animal approvals tolerate older APIs and reject malformed values", () => {
+  assert.equal(
+    facility({ id: "old", facility_type: "pet_shop" }).approved_animals,
+    null,
+  );
+  assert.deepEqual(
+    facility({
+      id: "new",
+      facility_type: "pet_shop",
+      approved_animals: ["cat", "bird"],
+    }).approved_animals,
+    ["cat", "bird"],
+  );
+  for (const animals of [["dragon"], ["cat", "cat"], "cat", [["cat"]], []])
+    assert.throws(
+      () => facility({ id: "invalid", approved_animals: animals }),
+      /invalid animal approvals/,
+    );
+});
 const merchant = { id: "m1", name: "Shop A", slug: "shop-a" };
 const result = {
   status: "paid",

@@ -1,4 +1,8 @@
 import { ApiError } from "./client.ts";
+import {
+  approvedAnimalLabels,
+  type ApprovedAnimal,
+} from "../facility-animals.ts";
 import type {
   CartItem,
   Category,
@@ -270,6 +274,23 @@ export function merchantOrder(value: unknown): Order {
 }
 export function facility(value: unknown): Facility {
   const v = object(value);
+  const animals = v.approved_animals;
+  if (
+    animals != null &&
+    (!Array.isArray(animals) ||
+      !animals.length ||
+      animals.some(
+        (animal) =>
+          typeof animal !== "string" ||
+          !Object.hasOwn(approvedAnimalLabels, animal),
+      ) ||
+      new Set(animals).size !== animals.length)
+  )
+    throw new ApiError(
+      502,
+      "invalid_response",
+      "The service returned invalid animal approvals.",
+    );
   const coordinate = (x: unknown, min: number, max: number) => {
     const n = Number(x);
     return x !== null &&
@@ -283,6 +304,7 @@ export function facility(value: unknown): Facility {
   };
   return {
     id: identifier(v.id),
+    approved_animals: animals == null ? null : (animals as ApprovedAnimal[]),
     name: text(v.name),
     type: v.facility_type === "vet" ? "Veterinary centre" : "Pet shop",
     address: text(v.address),

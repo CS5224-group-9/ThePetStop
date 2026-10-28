@@ -439,6 +439,45 @@
   font-size: 0.8125rem;
   max-width: 90ch;
 }
+.explorer-approved-animals {
+  margin-block: 24px;
+}
+.explorer-approved-animals h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+.explorer-approved-animals ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.explorer-approved-animals li {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--teal-soft);
+  color: var(--ink);
+}
+.explorer-approved-animals p {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.explorer-registry-details {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.explorer-registry-details summary {
+  min-height: 44px;
+  padding-block: 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.explorer-registry-details .explorer-facts {
+  margin-top: 0;
+  border-top: 0;
+}
 /* Pins use the same medical and bag symbols as result rows. */
 .facility-explorer .facility-live-marker {
   width: 44px;

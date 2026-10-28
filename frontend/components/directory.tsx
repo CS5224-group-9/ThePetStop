@@ -7,6 +7,10 @@ import {
 } from "@/lib/api/location-services";
 import { ApiError } from "@/lib/api/client";
 import { nearbyFacilities } from "@/lib/facility-search";
+import {
+  approvedAnimalLabels,
+  type ApprovedAnimal,
+} from "@/lib/facility-animals";
 import { currentLocation, type SearchLocation } from "@/lib/location";
 import { useApp } from "./app-provider";
 import { Badge, Empty, Icon } from "./ui";
@@ -17,6 +21,7 @@ export function Directory() {
   const { state } = useApp();
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
+  const [animal, setAnimal] = useState<ApprovedAnimal | "">("");
   const [selected, setSelected] = useState("");
   const [location, setLocation] = useState<SearchLocation | null>(null);
   const [locating, setLocating] = useState(false);
@@ -196,17 +201,20 @@ export function Directory() {
     setLocationError("");
   }
   const filtered = useMemo(
-    () => nearbyFacilities(state.facilities, { type }, location, radiusKm),
-    [state.facilities, type, location, radiusKm],
+    () =>
+      nearbyFacilities(state.facilities, { type, animal }, location, radiusKm),
+    [state.facilities, type, animal, location, radiusKm],
   );
   const facility = filtered.find((f) => f.id === selected);
   const source = safeExternalUrl(facility?.source_url);
   const website = safeExternalUrl(facility?.website);
   function resetFilters() {
     setType("");
+    setAnimal("");
+    setSelected("");
     setRadiusKm(5);
   }
-  const hasFilters = Boolean(type || (location && radiusKm !== 5));
+  const hasFilters = Boolean(type || animal || (location && radiusKm !== 5));
   return (
     <div className="facility-explorer">
       <header className="explorer-heading">
@@ -417,13 +425,39 @@ export function Directory() {
                     type="button"
                     key={value}
                     aria-pressed={type === value}
-                    onClick={() => setType(value)}
+                    onClick={() => {
+                      setType(value);
+                      setAnimal("");
+                      setSelected("");
+                    }}
                   >
                     <Icon name={icon} size={16} />
                     {label}
                   </button>
                 ))}
               </div>
+              {type === "Pet shop" && (
+                <label className="explorer-radius">
+                  Approved animals
+                  <select
+                    aria-label="Filter pet shops by approved animal"
+                    value={animal}
+                    onChange={(event) => {
+                      setAnimal(event.target.value as ApprovedAnimal | "");
+                      setSelected("");
+                    }}
+                  >
+                    <option value="">All animals</option>
+                    {Object.entries(approvedAnimalLabels).map(
+                      ([code, label]) => (
+                        <option key={code} value={code}>
+                          {label}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+              )}
             </div>
           </div>
           <div
@@ -581,24 +615,28 @@ export function Directory() {
                       </h2>
                       <p>{facility.address}</p>
                     </div>
-                    <dl className="explorer-facts">
-                      <div>
-                        <dt>Licence number</dt>
-                        <dd>{facility.licence_no || "Not supplied"}</dd>
-                      </div>
-                      <div>
-                        <dt>Verification source</dt>
-                        <dd>{facility.source || "Not supplied"}</dd>
-                      </div>
-                      <div>
-                        <dt>Last checked</dt>
-                        <dd>
-                          {facility.last_checked_at
-                            ? displayDate(facility.last_checked_at)
-                            : "Not supplied"}
-                        </dd>
-                      </div>
-                    </dl>
+                    {facility.type === "Pet shop" && (
+                      <section
+                        className="explorer-approved-animals"
+                        aria-label="Approved animals for sale"
+                      >
+                        <h3>Approved animals for sale</h3>
+                        {facility.approved_animals?.length ? (
+                          <>
+                            <ul>
+                              {facility.approved_animals.map((code) => (
+                                <li key={code}>{approvedAnimalLabels[code]}</li>
+                              ))}
+                            </ul>
+                            <p>
+                              Approval does not confirm current availability.
+                            </p>
+                          </>
+                        ) : (
+                          <p>Animal approval information not available.</p>
+                        )}
+                      </section>
+                    )}
                     <div className="explorer-detail-actions">
                       <a
                         className="button"
@@ -609,16 +647,6 @@ export function Directory() {
                         Get directions
                         <Icon name="arrow" size={17} />
                       </a>
-                      {source && (
-                        <a
-                          className="text-link"
-                          href={source}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Verification source ↗
-                        </a>
-                      )}
                       {website && (
                         <a
                           className="text-link"
@@ -638,6 +666,37 @@ export function Directory() {
                         </a>
                       )}
                     </div>
+                    <details className="explorer-registry-details">
+                      <summary>Registry details</summary>
+                      <dl className="explorer-facts">
+                        <div>
+                          <dt>Licence number</dt>
+                          <dd>{facility.licence_no || "Not supplied"}</dd>
+                        </div>
+                        <div>
+                          <dt>Verification source</dt>
+                          <dd>{facility.source || "Not supplied"}</dd>
+                        </div>
+                        <div>
+                          <dt>Last checked</dt>
+                          <dd>
+                            {facility.last_checked_at
+                              ? displayDate(facility.last_checked_at)
+                              : "Not supplied"}
+                          </dd>
+                        </div>
+                      </dl>
+                      {source && (
+                        <a
+                          className="text-link"
+                          href={source}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Verification source ↗
+                        </a>
+                      )}
+                    </details>
                   </aside>
                 )}
               </div>
