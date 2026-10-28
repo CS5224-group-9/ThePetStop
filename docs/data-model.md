@@ -99,3 +99,7 @@ backend/marketplace/fixtures/catalogue/
 `manage.py load_catalogue` is idempotent. It upserts categories, groups, merchants and products, and uploads images to the `product-images` bucket, or serves them locally in development.
 
 If pet services are built, they are `Product` rows with `product_type = "service"` and a `duration_minutes`, in an extra "Pet Services" category, bought through the same checkout.
+
+## Imported pet-shop animal approvals
+
+`Facility.approved_animals` is a nullable JSON list of `dog`, `cat`, `small_mammal`, `bird`, `marine_fish`, and `freshwater_fish`. `null` means unavailable or inapplicable (including vets); it does not mean no animals are approved. Parser version 2 reads the six labelled AVS approval columns and rejects missing columns, unexpected markers, and empty approvals. Approval-only changes update existing facilities without changing identity or geocoding queries. Legacy snapshots that omit the field preserve existing approvals.

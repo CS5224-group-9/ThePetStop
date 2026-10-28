@@ -101,3 +101,7 @@ The location-first flow is: choose an address or device location → choose a ra
 Distances are straight-line haversine distances, computed from the already-loaded facility coordinates; they are not driving/walking distances. Facilities with unknown/invalid coordinates are excluded from a bounded radius, and appear last with “Distance unavailable” in All Singapore. No facility coordinates or registry verification are invented. Vet/shop filters apply within the radius. Clear filters restores 5 km and all categories while preserving the centre; Clear search removes the centre.
 
 A dashed boundary shows the selected radius. It represents the search area, not device-location accuracy. The blue dot is reserved for device location; searched addresses use a pin. The calculation currently runs in the frontend against the bounded catalogue; future backend-driven pagination must apply radius filtering on the server before pagination.
+
+## Pet-shop animal filter
+
+Select Pet shops, then choose an approved animal category to filter the list and map pins together. Categories are AVS approvals for sale, not current stock or veterinary specialties. Unknown approvals do not match a specific animal filter. Radius and nearest-first ordering still apply. Changing facility type or clearing filters resets the animal selection. The details panel displays approvals with availability wording; licence, source, and last-checked date are in Registry details. Existing databases need migration and a fresh pet-shop ingestion run; see the ingestion operations guide.
