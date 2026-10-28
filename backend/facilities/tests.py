@@ -228,10 +228,18 @@ class FacilityListViewTests(TestCase):
         self.assertEqual(row["facility_type"], "vet")
         self.assertEqual(row["latitude"], "1.350000")
         self.assertEqual(row["verification_status"], "verified")
+        self.assertIsNone(row["approved_animals"])
         self.assertNotIn("email", row)
 
     def test_list_is_read_only(self):
         self.assertEqual(APIClient().post("/api/v1/facilities/").status_code, 405)
+
+    def test_pet_shop_approvals_are_public_and_vets_remain_unknown(self):
+        self.facility.facility_type = "pet_shop"
+        self.facility.approved_animals = ["dog", "cat"]
+        self.facility.save()
+        row = APIClient().get("/api/v1/facilities/").json()["results"][0]
+        self.assertEqual(row["approved_animals"], ["dog", "cat"])
 
 
 class LocationSearchViewTests(SimpleTestCase):

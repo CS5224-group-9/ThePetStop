@@ -108,6 +108,7 @@ class Facility(models.Model):
     licence_no = models.CharField(max_length=32, blank=True, default="")
     address = models.TextField()
     postal_code = models.CharField(max_length=6)
+    approved_animals = models.JSONField(null=True, blank=True, default=None)
     latitude = models.DecimalField(
         max_digits=9, decimal_places=6, null=True, blank=True
     )

@@ -14,6 +14,7 @@ class FacilitySerializer(serializers.ModelSerializer):
             "name",
             "address",
             "postal_code",
+            "approved_animals",
             "latitude",
             "longitude",
             "licence_no",

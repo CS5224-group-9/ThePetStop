@@ -19,6 +19,7 @@ from facilities.ingestion import (
     finalize,
     geocoding,
     loading,
+    parsers,
     recovery,
     status,
 )
@@ -133,6 +134,69 @@ def snapshot(count=2):
 
 @patch.dict(os.environ, ENV)
 class IngestionUnitTests(SimpleTestCase):
+    def test_pet_shop_approvals_are_read_from_the_pdf(self):
+        rows = fetch.parse_registry_pdf(fixtures.pdf("pet_shop"), "pet_shop")
+        self.assertEqual(
+            [row["name"] for row in rows], ["FIXTURE SHOP A", "FIXTURE SHOP B"]
+        )
+        self.assertEqual(rows[0]["approved_animals"], ["dog", "cat"])
+        self.assertEqual(
+            rows[1]["approved_animals"],
+            ["small_mammal", "bird", "marine_fish", "freshwater_fish"],
+        )
+        for invalid in ("yes", "**"):
+            changed = [list(row) for row in fixtures.ROWS["pet_shop"]]
+            changed[0][8] = invalid
+            with (
+                patch.dict(fixtures.ROWS, {"pet_shop": changed}),
+                self.assertRaises(fetch.RegistryParseError),
+            ):
+                fetch.parse_registry_pdf(fixtures.pdf("pet_shop"), "pet_shop")
+
+    def test_pet_shop_approval_headers_are_required_and_can_repeat(self):
+        header = [""] * 8 + ["D", "C", "SM", "B", "MF", "F"]
+        table = [
+            header,
+            fixtures.ROWS["pet_shop"][0],
+            header,
+            fixtures.ROWS["pet_shop"][1],
+        ]
+
+        def pdf(rows):
+            return SimpleNamespace(
+                pages=[
+                    SimpleNamespace(
+                        search=lambda pattern: [],
+                        find_tables=lambda: [
+                            SimpleNamespace(bbox=(0, 0, 100, 100), extract=lambda: rows)
+                        ],
+                    )
+                ]
+            )
+
+        self.assertEqual(len(parsers._pet_shop_records(pdf(table))), 2)
+        for rows in (
+            table[1:],
+            [header[:-1], fixtures.ROWS["pet_shop"][0]],
+            [header, fixtures.ROWS["pet_shop"][0][:-1]],
+        ):
+            with self.assertRaises(fetch.RegistryParseError):
+                parsers._pet_shop_records(pdf(rows))
+
+    def test_revoked_pet_shop_table_is_excluded(self):
+        header = [""] * 8 + ["D", "C", "SM", "B", "MF", "F"]
+        active = SimpleNamespace(
+            bbox=(0, 0, 100, 80), extract=lambda: [header, fixtures.ROWS["pet_shop"][0]]
+        )
+        revoked = SimpleNamespace(
+            bbox=(0, 120, 100, 200), extract=lambda: [fixtures.ROWS["pet_shop"][1][:8]]
+        )
+        page = SimpleNamespace(
+            search=lambda pattern: [{"top": 100}], find_tables=lambda: [active, revoked]
+        )
+        rows = parsers._pet_shop_records(SimpleNamespace(pages=[page]))
+        self.assertEqual([row["source_key"] for row in rows], ["AB123456"])
+
     def test_failure_logs_exclude_unvalidated_batch_fields(self):
         with patch.object(status, "emit") as emit:
             status.fail(
@@ -285,6 +349,53 @@ class IngestionUnitTests(SimpleTestCase):
 
 @patch.dict(os.environ, ENV)
 class IngestionDatabaseTests(TestCase):
+    def test_approval_updates_and_older_snapshots_preserve_enriched_data(self):
+        def pet_snapshot(animals):
+            value = snapshot()
+            value.update(
+                source="pet_shop",
+                facility_type="pet_shop",
+                registry_url=fetch.DEFAULT_SOURCES["pet_shop"],
+                parser_version="2",
+                raw_key=f"raw/pet_shop/{'a' * 64}.pdf",
+            )
+            for record in value["records"]:
+                record.update(
+                    source_id="pet_shop",
+                    facility_type="pet_shop",
+                    approved_animals=animals,
+                )
+            value["snapshot_sha256"] = status.digest(
+                {key: item for key, item in value.items() if key != "snapshot_sha256"}
+            )
+            return value
+
+        first = pet_snapshot(["cat"])
+        loading.load_snapshot(first)
+        changed = pet_snapshot(["dog", "cat"])
+        result = loading.load_snapshot(changed)
+        self.assertEqual(result["updated"], 2)
+        self.assertEqual(Facility.objects.first().approved_animals, ["dog", "cat"])
+        older_format = pet_snapshot(["cat"])
+        older_format["parser_version"] = "1"
+        for record in older_format["records"]:
+            record.pop("approved_animals")
+        older_format["snapshot_sha256"] = status.digest(
+            {
+                key: item
+                for key, item in older_format.items()
+                if key != "snapshot_sha256"
+            }
+        )
+        loading.load_snapshot(older_format)
+        self.assertEqual(Facility.objects.first().approved_animals, ["dog", "cat"])
+        for invalid in (["dragon"], ["cat", "cat"], "cat", [["cat"]], [], None):
+            with (
+                self.subTest(invalid=invalid),
+                self.assertRaises(loading.SnapshotValidationError),
+            ):
+                loading.load_snapshot(pet_snapshot(invalid))
+
     def test_invalid_status_is_quarantined_without_creating_a_run(self):
         s3 = FakeS3()
         run_id, event_id = str(uuid4()), str(uuid4())

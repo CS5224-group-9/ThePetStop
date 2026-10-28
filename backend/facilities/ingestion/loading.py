@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone as django_timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
+from facilities.animals import ANIMAL_COLUMNS
 from facilities.ingestion import status as run_status
 from facilities.ingestion.aws import client as aws_client
 from facilities.models import (
@@ -194,8 +195,30 @@ def _validate_snapshot(snapshot):
         if not all(isinstance(value, str) for value in (phone, email, website)):
             raise SnapshotValidationError("Snapshot contact fields are invalid")
         geocoded_at = _aware_datetime(record.get("geocoded_at"), "geocoded_at")
+        approval_fields = {}
+        if "approved_animals" in record:
+            animals = record["approved_animals"]
+            if animals is not None and (
+                source != "pet_shop"
+                or not isinstance(animals, list)
+                or not animals
+                or any(
+                    not isinstance(animal, str) or animal not in ANIMAL_COLUMNS.values()
+                    for animal in animals
+                )
+                or len(set(animals)) != len(animals)
+            ):
+                raise SnapshotValidationError("Snapshot animal approvals are invalid")
+            approval_fields["approved_animals"] = animals
+        if (
+            source == "pet_shop"
+            and snapshot.get("parser_version") == "2"
+            and not approval_fields.get("approved_animals")
+        ):
+            raise SnapshotValidationError("Snapshot animal approvals are missing")
         validated.append(
             {
+                **approval_fields,
                 "source_id": source,
                 "source_key": source_key,
                 "facility_type": source,
@@ -362,6 +385,7 @@ def _apply_snapshot(
         source_keys = []
         inserted = updated = unchanged = 0
         business_fields = (
+            "approved_animals",
             "facility_type",
             "name",
             "licence_no",
@@ -398,7 +422,9 @@ def _apply_snapshot(
                 inserted += 1
                 continue
             changed = any(
-                getattr(facility, field) != defaults[field] for field in business_fields
+                getattr(facility, field) != defaults[field]
+                for field in business_fields
+                if field in defaults
             )
             for field, value in defaults.items():
                 setattr(facility, field, value)

@@ -215,6 +215,21 @@ def main():
             raise RuntimeError(
                 "Fixture facilities differ from the reviewed expected dataset"
             )
+        approvals = sql(
+            "select name, approved_animals from facilities_facility where active order by name"
+        )
+        if approvals != [
+            ("FIXTURE SHOP A", ["dog", "cat"]),
+            (
+                "FIXTURE SHOP B",
+                ["small_mammal", "bird", "marine_fish", "freshwater_fish"],
+            ),
+            ("FIXTURE VET A", None),
+            ("FIXTURE VET B", None),
+        ]:
+            raise RuntimeError(
+                "Animal approvals were not preserved through the pipeline"
+            )
 
     before = sql("select id from facilities_facility order by id")
     scenario("malformed")
