@@ -112,6 +112,37 @@ test("facility listings come from the public paginated API and map backend field
   assert.equal(facility.latitude, 1.35);
   assert.equal(facility.verification_status, "verified");
 });
+test("facility filters are sent with each paginated request", async () => {
+  const urls: string[] = [];
+  const client = createApiClient({
+    baseUrl: origin,
+    fetcher: async (url) => {
+      urls.push(String(url));
+      return json({
+        results: [],
+        next:
+          urls.length === 1
+            ? origin +
+              "facilities/?type=vet&lat=1.35&lng=103.84&radius_km=5&page=2"
+            : null,
+      });
+    },
+  });
+  await createServices(client).facilities(
+    new URLSearchParams({
+      type: "vet",
+      lat: "1.35",
+      lng: "103.84",
+      radius_km: "5",
+    }),
+  );
+  assert.equal(urls.length, 2);
+  for (const url of urls) {
+    const params = new URL(url).searchParams;
+    assert.equal(params.get("type"), "vet");
+    assert.equal(params.get("radius_km"), "5");
+  }
+});
 test("private requests require a token and report expired sessions", async () => {
   let calls = 0;
   let expired = 0;

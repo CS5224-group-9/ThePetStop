@@ -4,9 +4,7 @@ info:
   version: 0.1.0
   description: >-
     Public endpoints for searching Singapore locations and discovering pet-care
-    facilities. The location search operation is implemented. Facility list
-    and detail operations describe the agreed frontend contract and are not
-    implemented by the current Django backend yet.
+    facilities. Location search and facility listing are implemented; facility detail is planned.
 servers:
   - url: http://localhost:8000/api/v1
     description: Local Django API
@@ -24,10 +22,10 @@ paths:
       operationId: listFacilities
       summary: List pet-care facilities
       description: >-
-        Planned contract; this route is not implemented in the current backend.
-        Results include active facilities only. When latitude and longitude are
-        supplied, radius filtering uses straight-line distance in kilometres.
-      x-implementation-status: planned
+        Results include active facilities only. Latitude and longitude must be supplied
+        together. With coordinates, results are nearest first; radius filtering uses
+        straight-line distance before pagination.
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/Latitude'
         - $ref: '#/components/parameters/Longitude'
@@ -43,18 +41,12 @@ paths:
           description: Filter by facility type.
           schema:
             $ref: '#/components/schemas/FacilityType'
-        - name: q
+        - name: animal
           in: query
-          description: Case-insensitive search over facility name and address.
+          description: Filter pet shops by their approved animal category.
           schema:
             type: string
-            maxLength: 120
-        - name: postal_code
-          in: query
-          description: Exact Singapore six-digit postal code.
-          schema:
-            type: string
-            pattern: '^\d{6}$'
+            enum: [dog, cat, small_mammal, bird, marine_fish, freshwater_fish]
       responses:
         '200':
           description: A page of matching facilities.

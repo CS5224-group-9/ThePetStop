@@ -98,9 +98,9 @@ If invoking Next.js directly rather than using the Yarn scripts, run `node scrip
 
 The location-first flow is: choose an address or device location → choose a radius → browse facilities nearest first. Radius options are 1, 2, 5 (default), 10 and 20 km, plus All Singapore. Before a centre is chosen, radius is disabled and the directory shows all facilities. The radius selector applies equally to the list and facility pins; changing it also fits the map to the search area.
 
-Distances are straight-line haversine distances, computed from the already-loaded facility coordinates; they are not driving/walking distances. Facilities with unknown/invalid coordinates are excluded from a bounded radius, and appear last with “Distance unavailable” in All Singapore. No facility coordinates or registry verification are invented. Vet/shop filters apply within the radius. Clear filters restores 5 km and all categories while preserving the centre; Clear search removes the centre.
+Distances are straight-line haversine distances, calculated by the backend from facility coordinates; they are not driving/walking distances. Facilities with unknown/invalid coordinates are excluded from a bounded radius, and appear last with “Distance unavailable” in All Singapore. No facility coordinates or registry verification are invented. Vet/shop filters apply within the radius. Clear filters restores 5 km and all categories while preserving the centre; Clear search removes the centre.
 
-A dashed boundary shows the selected radius. It represents the search area, not device-location accuracy. The blue dot is reserved for device location; searched addresses use a pin. The calculation currently runs in the frontend against the bounded catalogue; future backend-driven pagination must apply radius filtering on the server before pagination.
+A dashed boundary shows the selected radius. It represents the search area, not device-location accuracy. The blue dot is reserved for device location; searched addresses use a pin. The API applies filters and distance ordering before pagination; the list and map display the same matching facilities.
 
 ## Pet-shop animal filter
 
