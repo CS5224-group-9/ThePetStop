@@ -155,6 +155,9 @@ export function product(
   result.offers = [
     {
       id: result.id,
+      name: result.name,
+      size: result.size,
+      species: result.species,
       merchant: m,
       merchant_id: merchantId,
       price_cents: result.price_cents,
@@ -164,6 +167,9 @@ export function product(
       const offer = product(o, categories, merchants);
       return {
         id: offer.id,
+        name: offer.name,
+        size: offer.size,
+        species: offer.species,
         merchant: offer.merchant,
         merchant_id: offer.merchant_id,
         price_cents: offer.price_cents,
