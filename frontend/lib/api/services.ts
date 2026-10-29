@@ -26,8 +26,11 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
         products: rows.map((v) => map.product(v, categories, merchants)),
       };
     },
-    async facilities() {
-      return (await client.list("facilities/")).map(map.facility);
+    async facilities(params = new URLSearchParams(), signal?: AbortSignal) {
+      const query = params.toString();
+      return (
+        await client.list(`facilities/${query ? `?${query}` : ""}`, { signal })
+      ).map(map.facility);
     },
     async me() {
       return map.profile(await client.request("me/", privateRequest));

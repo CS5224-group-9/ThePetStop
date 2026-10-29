@@ -255,7 +255,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
     queueMicrotask(() => {
       void refresh("catalogue");
-      void refresh("facilities");
       void loadIdentity();
     });
     if (localUI || !authConfigured()) return;
