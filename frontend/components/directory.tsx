@@ -12,13 +12,17 @@ import {
   type ApprovedAnimal,
 } from "@/lib/facility-animals";
 import { currentLocation, type SearchLocation } from "@/lib/location";
-import { useApp } from "./app-provider";
+import { services } from "@/lib/api/services";
+import type { Facility } from "@/lib/api/types";
 import { Badge, Empty, Icon } from "./ui";
-import { ResourceState } from "./resource-state";
+
 import { FacilityMap } from "./facility-map";
 import { displayDate, safeExternalUrl } from "@/lib/format";
 export function Directory() {
-  const { state } = useApp();
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [facilityError, setFacilityError] = useState("");
+  const [facilityLoading, setFacilityLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
   const [animal, setAnimal] = useState<ApprovedAnimal | "">("");
@@ -156,7 +160,7 @@ export function Directory() {
     document.getElementById("facility-search")?.focus();
   }
   function selectFacility(id: string, trigger: HTMLButtonElement) {
-    const match = state.facilities.find((item) => item.id === id);
+    const match = facilities.find((item) => item.id === id);
     if (!match) return;
     locationRequest.current += 1;
     setLocating(false);
@@ -200,10 +204,41 @@ export function Directory() {
     setLocating(false);
     setLocationError("");
   }
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams();
+    if (type) params.set("type", type === "Pet shop" ? "pet_shop" : "vet");
+    if (animal) params.set("animal", animal);
+    if (location) {
+      params.set("lat", String(location.latitude));
+      params.set("lng", String(location.longitude));
+      if (radiusKm !== null) params.set("radius_km", String(radiusKm));
+    }
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return;
+      setFacilityLoading(true);
+      setFacilityError("");
+      setFacilities([]);
+    });
+    services
+      .facilities(params, controller.signal)
+      .then(setFacilities)
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setFacilityError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load facilities.",
+          );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setFacilityLoading(false);
+      });
+    return () => controller.abort();
+  }, [type, animal, location, radiusKm, retry]);
   const filtered = useMemo(
-    () =>
-      nearbyFacilities(state.facilities, { type, animal }, location, radiusKm),
-    [state.facilities, type, animal, location, radiusKm],
+    () => nearbyFacilities(facilities, { type: "" }, location, null),
+    [facilities, location],
   );
   const facility = filtered.find((f) => f.id === selected);
   const source = safeExternalUrl(facility?.source_url);
@@ -255,7 +290,16 @@ export function Directory() {
           </div>
         </section>
       )}
-      <ResourceState domain="facilities">
+      <div aria-busy={facilityLoading}>
+        {facilityLoading && <p role="status">Loading facilities�</p>}
+        {facilityError && (
+          <div role="alert">
+            <p>{facilityError}</p>
+            <button type="button" onClick={() => setRetry(retry + 1)}>
+              Try again
+            </button>
+          </div>
+        )}
         <div className="explorer-workspace">
           <div className="explorer-controls">
             <form
@@ -740,7 +784,7 @@ export function Directory() {
           the facility to confirm current services and opening hours. Your
           device location stays in this page’s memory.
         </p>
-      </ResourceState>
+      </div>
     </div>
   );
 }
