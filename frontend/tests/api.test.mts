@@ -224,6 +224,53 @@ test("invalid server money is rejected and order history uses the server snapsho
   );
   assert.equal(order(result).items[0].product_name, "Original name");
 });
+test("comparison offers preserve each shop's product identity and size", () => {
+  const saved = product({
+    id: 1,
+    name: "Salmon recipe 2 kg",
+    species: "cat",
+    size: "2 kg",
+    price_cents: 2200,
+    stock: 5,
+    merchant: { id: 1, name: "Harbour Paws", slug: "harbour-paws" },
+    also_sold_by: [
+      {
+        id: 2,
+        name: "Salmon recipe 2 kg",
+        species: "cat",
+        size: "2 kg",
+        price_cents: 1800,
+        stock: 0,
+        merchant: { id: 2, name: "Little Paws", slug: "little-paws" },
+      },
+    ],
+  });
+  assert.deepEqual(
+    saved.offers.map(({ name, size, species, price_cents, stock }) => ({
+      name,
+      size,
+      species,
+      price_cents,
+      stock,
+    })),
+    [
+      {
+        name: "Salmon recipe 2 kg",
+        size: "2 kg",
+        species: "Cat",
+        price_cents: 1800,
+        stock: 0,
+      },
+      {
+        name: "Salmon recipe 2 kg",
+        size: "2 kg",
+        species: "Cat",
+        price_cents: 2200,
+        stock: 5,
+      },
+    ],
+  );
+});
 test("return paths and external links reject executable URLs, network-path redirects and control characters", () => {
   for (const path of [
     "https://evil.test/",

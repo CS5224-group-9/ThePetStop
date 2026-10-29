@@ -532,9 +532,7 @@ export function ProductDetail() {
                   ? ` · ${offer.species.charAt(0).toUpperCase()}${offer.species.slice(1)}`
                   : ""}
               </p>
-              <p>
-                {offer.stock ? `${offer.stock} available` : "Out of stock"}
-              </p>
+              <p>{offer.stock ? `${offer.stock} available` : "Out of stock"}</p>
             </div>
             {offer.id === lowestInStockOfferId && (
               <Badge tone="green">Lowest in-stock price</Badge>

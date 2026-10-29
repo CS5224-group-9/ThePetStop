@@ -13,8 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DJANGO_SECRET_KEY: ci-only-not-a-secret
-      # check doesn't connect; add credentials with a Postgres service for tests
-      DATABASE_URL: postgres://localhost:5432/petstop
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/petstop
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: petstop
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d petstop"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
@@ -34,3 +47,6 @@ jobs:
 
       - name: Django system check
         run: uv run python manage.py check
+
+      - name: Django tests
+        run: uv run python manage.py test
