@@ -291,7 +291,6 @@ export function Directory() {
         </section>
       )}
       <div aria-busy={facilityLoading}>
-        {facilityLoading && <p role="status">Loading facilities�</p>}
         {facilityError && (
           <div role="alert">
             <p>{facilityError}</p>
@@ -389,9 +388,13 @@ export function Directory() {
                     : placeSearched
                       ? `${placeResults.length} locations found. Choose one to see nearby facilities.`
                       : "Press Search, then choose a matching location."
-                  : location
-                    ? `Showing ${filtered.length} facilities ${radiusKm === null ? "across Singapore" : `within ${radiusKm} km`}, nearest first. Distances are straight-line.`
-                    : "Search for a location or use your current location to find facilities within a radius."}
+                  : facilityLoading
+                    ? "Loading facilities…"
+                    : facilityError
+                      ? "Facility results are unavailable."
+                      : location
+                        ? `Showing ${filtered.length} facilities ${radiusKm === null ? "across Singapore" : `within ${radiusKm} km`}, nearest first. Distances are straight-line.`
+                        : "Search for a location or use your current location to find facilities within a radius."}
               </p>
               {suggestionsOpen && (
                 <div
@@ -517,8 +520,11 @@ export function Directory() {
             <section className="explorer-results" aria-label="Facility results">
               <div className="explorer-results-heading">
                 <h2 aria-live="polite">
-                  {filtered.length}{" "}
-                  {filtered.length === 1 ? "facility" : "facilities"}
+                  {facilityLoading
+                    ? "Loading facilities…"
+                    : facilityError
+                      ? "Facilities unavailable"
+                      : `${filtered.length} ${filtered.length === 1 ? "facility" : "facilities"}`}
                 </h2>
                 {hasFilters ? (
                   <button type="button" onClick={resetFilters}>
@@ -529,7 +535,20 @@ export function Directory() {
                 )}
               </div>
               <div className="explorer-rows" ref={resultsList}>
-                {filtered.length ? (
+                {facilityLoading ? (
+                  <div className="explorer-skeleton" aria-hidden="true">
+                    {[0, 1, 2].map((row) => (
+                      <div className="explorer-skeleton-row" key={row}>
+                        <span className="explorer-skeleton-icon" />
+                        <span className="explorer-skeleton-lines">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : facilityError ? null : filtered.length ? (
                   filtered.map((f) => (
                     <button
                       type="button"

@@ -200,6 +200,36 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.explorer-skeleton-row {
+  display: flex;
+  gap: 12px;
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.explorer-skeleton-icon,
+.explorer-skeleton-lines span {
+  background: var(--group);
+  border-radius: 6px;
+}
+.explorer-skeleton-icon {
+  flex: 0 0 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+.explorer-skeleton-lines {
+  display: grid;
+  flex: 1;
+  gap: 10px;
+}
+.explorer-skeleton-lines span {
+  height: 12px;
+}
+.explorer-skeleton-lines span:first-child {
+  width: 40%;
+}
+.explorer-skeleton-lines span:last-child {
+  width: 65%;
+}
 .explorer-row {
   display: flex;
   width: 100%;
