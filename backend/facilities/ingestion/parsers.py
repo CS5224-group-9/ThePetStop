@@ -4,7 +4,9 @@ from io import BytesIO
 
 import pdfplumber
 
-PARSER_VERSION = "1"
+from facilities.animals import ANIMAL_COLUMNS
+
+PARSER_VERSION = "2"
 VET = "vet"
 PET_SHOP = "pet_shop"
 SOURCES = {VET, PET_SHOP}
@@ -129,15 +131,37 @@ def _vet_serials(pdf):
 def _pet_shop_records(pdf):
     records = []
     for page in pdf.pages:
-        for table in page.extract_tables():
+        revoked = page.search(r"(?i)List\s+of\s+Revoked\s+Pet\s+Shop\s+Licences")
+        revoked_top = min((heading["top"] for heading in revoked), default=None)
+        for found_table in page.find_tables():
+            if revoked_top is not None and found_table.bbox[1] >= revoked_top:
+                continue
+            table = found_table.extract()
+            animal_columns = None
             for row in table:
+                if row and [_clean(cell) for cell in row[8:]] == list(ANIMAL_COLUMNS):
+                    animal_columns = list(ANIMAL_COLUMNS.values())
+                    continue
                 if not row or not PET_SHOP_LICENCE.fullmatch(_clean(row[0])):
                     continue
                 cells = [_clean(cell) for cell in row]
-                if len(cells) < 8:
+                if len(cells) != 14 or animal_columns is None:
                     raise RegistryParseError(
                         f"Pet shop {cells[0]} has an incomplete row"
                     )
+                markers = cells[8:]
+                if (
+                    any(marker not in {"", "*"} for marker in markers)
+                    or "*" not in markers
+                ):
+                    raise RegistryParseError(
+                        f"Pet shop {cells[0]} has invalid animal approvals"
+                    )
+                approved_animals = [
+                    animal
+                    for animal, marker in zip(animal_columns, markers, strict=True)
+                    if marker == "*"
+                ]
                 licence_no, name = cells[0], cells[1]
                 postal = POSTAL_CODE.search(cells[7])
                 address = _address(
@@ -159,6 +183,7 @@ def _pet_shop_records(pdf):
                         "licence_no": licence_no,
                         "address": address,
                         "postal_code": postal.group(1),
+                        "approved_animals": approved_animals,
                     }
                 )
 

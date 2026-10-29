@@ -234,4 +234,7 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
   };
   return service;
 }
-export const services = localUI ? localServices : createServices(api);
+const apiServices = createServices(api);
+export const services = localUI
+  ? { ...localServices, facilities: apiServices.facilities }
+  : apiServices;

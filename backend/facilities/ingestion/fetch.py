@@ -17,7 +17,11 @@ from facilities.ingestion.dispatch import (
     dispatch_batches,
     resume_dispatch,
 )
-from facilities.ingestion.parsers import RegistryParseError, parse_registry_pdf
+from facilities.ingestion.parsers import (
+    PARSER_VERSION,
+    RegistryParseError,
+    parse_registry_pdf,
+)
 
 DEFAULT_SOURCES = {
     "vet": "https://avs.nparks.gov.sg/outreach/resources/public-registry-of-avs-licensed-veterinary-centres/",
@@ -272,7 +276,7 @@ def fetch_registry(source, run_id=None, s3_client=None, sqs_client=None):
         "raw_key": raw_key,
         "retrieved_at": retrieved_at,
         "parsed_count": len(records),
-        "parser_version": "1",
+        "parser_version": PARSER_VERSION,
         "expected_batch_ids": [batch["batch_id"] for batch in batches],
         "records": records,
     }

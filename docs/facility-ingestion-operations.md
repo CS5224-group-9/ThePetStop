@@ -134,3 +134,20 @@ Production readiness requires verified alerts and recovery on AWS. Local green c
   retains 125 vets and 340 pet shops. Its geocoder remains at 75 attempts/minute.
 - No AWS deployment or schedule activation was performed. The GitHub workflow
   was updated; the recorded checks were run locally rather than on GitHub.
+
+## Importing animal approvals (parser version 2)
+
+Apply migration `0004_facility_approved_animals`, rebuild the ingestion image, and rerun local bootstrap before starting a **new** pet-shop run. An existing run resumes its frozen parsed artifact and will not acquire new parser fields. From the repository root:
+
+```powershell
+uv run --project backend python backend/manage.py migrate
+docker build --platform linux/amd64 -t petstop-backend:ingestion-local backend
+uv run --project backend python scripts/facilities/bootstrap_local.py --endpoint-url http://localhost:4566 --image petstop-backend:ingestion-local
+uv run --project backend python scripts/facilities/integration_local.py --endpoint-url http://localhost:4566 --source pet_shop
+```
+
+Unchanged postal codes reuse the normal geocoding cache. Artifact schema version 1 remains compatible because the added field is optional for legacy parser output; new parser-version-2 pet-shop snapshots must contain valid nonempty approvals. The loader includes approvals in change detection, and omission by an old snapshot does not erase existing approvals. Source/category errors fail the snapshot and preserve the previous dataset. Vets remain `null`. The isolated fixture suite verifies all six categories through actual Floci delivery and PostgreSQL loading.
+
+The September 2026 PDF also contains a separate revoked-licence table on its last page. Parser version 2 excludes tables below that explicitly identified heading using their PDF coordinates. On the 29 October local reimport, this corrected two previously active revoked shops: AS20K00051 and AS21L00075. The accepted snapshot contains 338 active pet shops (all with approvals), plus 125 existing vets. Revoked rows are deactivated, not deleted. Local run: `edbcc83f-e995-49fd-bac7-8b80ef497cc4`.
+
+Verification on 29 October 2026: all 45 Django tests and 27 frontend tests passed, along with Ruff, frontend lint/type/format checks, the production static build, and the isolated Floci suite. The Floci suite checked all six approval categories in PostgreSQL after happy, throttled, and expired-token runs, plus malformed-PDF preservation, duplicate loading, database-outage replay, DLQ archival, and invocation-failure capture. AWS deployment was not performed.

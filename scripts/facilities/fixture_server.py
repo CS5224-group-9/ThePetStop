@@ -20,6 +20,12 @@ ROWS = {
             "03",
             "NIL",
             "080003",
+            "*",
+            "*",
+            "",
+            "",
+            "",
+            "",
         ],
         [
             "AB123457",
@@ -30,6 +36,12 @@ ROWS = {
             "04",
             "NIL",
             "080004",
+            "",
+            "",
+            "*",
+            "*",
+            "*",
+            "*",
         ],
     ],
 }
@@ -37,27 +49,31 @@ SCENARIO = {"name": "happy", "requests": 0}
 
 
 def pdf(source):
+    header = ["No", "Name", "Block", "Street", "Building", "Floor", "Unit", "Postal"]
+    if source == "pet_shop":
+        header += ["D", "C", "SM", "B", "MF", "F"]
     rows = [
-        ["No", "Name", "Block", "Street", "Building", "Floor", "Unit", "Postal"],
+        header,
         *ROWS[source],
     ]
     drawing = []
-    for col in range(9):
-        x = 20 + col * 100
+    column_width = 100
+    for col in range(len(header) + 1):
+        x = 20 + col * column_width
         drawing.append(f"{x} 450 m {x} 540 l S")
     for row in range(4):
         y = 540 - row * 30
-        drawing.append(f"20 {y} m 820 {y} l S")
+        drawing.append(f"20 {y} m {20 + len(header) * column_width} {y} l S")
     for row_no, row in enumerate(rows):
         for col, value in enumerate(row):
             drawing.append(
-                f"BT /F1 7 Tf {23 + col * 100} {521 - row_no * 30} Td ({value}) Tj ET"
+                f"BT /F1 7 Tf {23 + col * column_width} {521 - row_no * 30} Td ({value}) Tj ET"
             )
     stream = "\n".join(drawing).encode()
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 850 600] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {50 + len(header) * column_width} 600] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".encode(),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream",
     ]

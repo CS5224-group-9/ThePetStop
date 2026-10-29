@@ -1,3 +1,5 @@
+import type { ApprovedAnimal } from "../facility-animals.ts";
+
 export type HealthRecord = {
   id: string;
   title: string;
@@ -90,12 +92,12 @@ export type Profile = {
   merchant: Merchant | null;
 };
 export type Facility = {
+  approved_animals: ApprovedAnimal[] | null;
   id: string;
   name: string;
   type: string;
   address: string;
   area: string;
-  emergency: boolean;
   latitude: number | null;
   longitude: number | null;
   phone: string;
