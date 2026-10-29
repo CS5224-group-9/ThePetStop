@@ -286,6 +286,9 @@ function offer(product: Product): Product {
       .products.filter((p) => p.name === product.name)
       .map((p) => ({
         id: p.id,
+        name: p.name,
+        size: p.size,
+        species: p.species,
         merchant: p.merchant,
         merchant_id: p.merchant_id,
         price_cents: p.price_cents,

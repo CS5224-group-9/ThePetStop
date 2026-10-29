@@ -41,6 +41,9 @@ export type Merchant = { id: string; slug: string; name: string };
 export type Category = { id: string; slug: string; name: string };
 export type ProductOffer = {
   id: string;
+  name: string;
+  size: string;
+  species: string;
   merchant: string;
   merchant_id: string;
   price_cents: number;
