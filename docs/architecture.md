@@ -6,7 +6,7 @@ The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six f
 
 The target AWS architecture for the MVP, what is built today, and the decisions still open. Scope is in [product-context.md](product-context.md); file layout and API routes are in [repository-structure.md](repository-structure.md).
 
-Last updated 2026-10-25. Re-check the code before trusting the "Current state" section.
+Last updated 2026-10-29. Re-check the code before trusting the "Current state" section.
 
 ## Stack
 
@@ -99,17 +99,17 @@ A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so loc
 
 ## Current state
 
-Checked 2026-10-25 against the working tree.
+Checked 2026-10-29 against the working tree.
 
 | Area | What exists |
 | --- | --- |
 | Frontend | Static-export frontend that defaults to local sample data, browser-persisted profiles/reminders/cart/orders, a live OneMap facility map with sample pins, browser geolocation, and merchant editing. Explicit API mode retains configurable Cognito OIDC/PKCE, pet/document/cart/order operations and MapLibre/OneMap. Backend feature endpoints and actual AWS configuration remain unimplemented here; see `docs/frontend-integration.md` for the proposed wire contract and deployment boundary. |
-| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally, Secrets Manager in AWS). Apps: `api` (shared error format, Cognito authentication and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`, which returns `groups` and a `merchant` that is always null for now), empty `pets`, `facilities` with public OneMap address search (registry models/endpoints still absent), and `marketplace` with catalogue models, migration, public category/merchant/product APIs, comparison offers, and an idempotent fixture loader. `Dockerfile` and `config/lambda_handler.py` package it for Lambda. Django tests cover `/me/`, `/health/` and token validation. |
+| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally, Secrets Manager in AWS). Apps: `api` (shared error format, Cognito authentication and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`, which returns `groups` and a `merchant` that is always null for now), empty `pets`, `facilities` with public OneMap address search (registry models/endpoints still absent), and `marketplace` with catalogue models, migration, public category/merchant/product APIs, comparison offers, and an idempotent fixture loader. `Dockerfile` and `config/lambda_handler.py` package it for Lambda. Django tests cover `/me/`, `/health/`, token validation and marketplace catalogue search, filtering, storefronts and comparison offers. |
 | Database | PostgreSQL 16 in Docker Compose (`docker-compose.yml` at the repo root), read through `DATABASE_URL`. `accounts.User` is the user model from the first migration. |
 | Auth | `api.authentication.CognitoAuthentication` verifies Cognito access tokens (issuer, `client_id`, `token_use`, signature) and maps `sub` to `accounts.User`; session auth remains for the admin. A missing login returns 401. A pre-token-generation trigger adds `email` to access tokens. Users are not added to `owner` automatically; anyone not in `merchant` is treated as an owner. |
 | Files, external data | None. |
 | Infrastructure as code | CDK app in `infra/` with five stacks: `PetStop-Dev-Network` (VPC, endpoints, security groups), `-Data` (RDS, Django secret key), `-Storage` (S3 buckets, CloudFront), `-Auth` (Cognito) and `-Api` (Lambdas, HTTP API with JWT authorizer). The account is bootstrapped; the stacks are not deployed yet. |
-| CI | Backend lint/format and Django check; frontend lint/format, API and local behavior tests and static build; infra Prettier, `tsc` and template tests. All run on PRs and pushes to main. `deploy.yml` deploys `main` to the dev stage: `cdk deploy`, `migrate`, a health check, then the frontend build, S3 upload and CloudFront invalidation. `aws-test.yml` remains a manual AWS caller-identity check. |
+| CI | Backend Ruff lint/format, Django system check and tests against PostgreSQL 16; frontend lint/format, API and local behavior tests and static build; infra Prettier, `tsc` and template tests. All run on PRs and pushes to main. `deploy.yml` deploys `main` to the dev stage: `cdk deploy`, `migrate`, a health check, then the frontend build, S3 upload and CloudFront invalidation. `aws-test.yml` remains a manual AWS caller-identity check. |
 
 Backend settings in `backend/config/settings.py`:
 

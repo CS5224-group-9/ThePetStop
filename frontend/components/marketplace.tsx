@@ -88,6 +88,7 @@ export function Shop({ storefront = false }: { storefront?: boolean }) {
   };
   const minCents = toCents(minPrice);
   const maxCents = toCents(maxPrice);
+  const normalizedQuery = query.trim().toLowerCase();
   const reset = () => {
     setQuery("");
     setCategory("");
@@ -106,9 +107,9 @@ export function Shop({ storefront = false }: { storefront?: boolean }) {
         (minCents === null || p.price_cents >= minCents) &&
         (maxCents === null || p.price_cents <= maxCents) &&
         (!storefront || Boolean(merchant && p.merchant_id === merchant.id)) &&
-        `${p.name} ${p.category} ${p.merchant}`
+        `${p.name} ${p.description} ${p.category} ${p.merchant} ${p.species} ${p.size}`
           .toLowerCase()
-          .includes(query.toLowerCase()),
+          .includes(normalizedQuery),
     )
     .sort((a, b) =>
       sort === "low"
@@ -446,6 +447,9 @@ export function ProductDetail() {
   const merchantStore = state.merchants.find(
     (item) => item.id === p.merchant_id,
   );
+  const lowestInStockOfferId = [...p.offers]
+    .filter((offer) => offer.stock > 0)
+    .sort((left, right) => left.price_cents - right.price_cents)[0]?.id;
   return (
     <>
       <PageHeading
@@ -514,16 +518,25 @@ export function ProductDetail() {
           </div>
           <Badge tone="neutral">{p.offers.length} offer(s)</Badge>
         </div>
-        {p.offers.map((offer, index) => (
+        {p.offers.map((offer) => (
           <div className="offer-row" key={offer.id}>
             <span className="merchant-initial">
               {offer.merchant.slice(0, 1)}
             </span>
             <div>
               <h3>{offer.merchant}</h3>
+              <p>
+                {offer.name}
+                {offer.size ? ` · ${offer.size}` : ""}
+                {offer.species
+                  ? ` · ${offer.species.charAt(0).toUpperCase()}${offer.species.slice(1)}`
+                  : ""}
+              </p>
               <p>{offer.stock ? `${offer.stock} available` : "Out of stock"}</p>
             </div>
-            {index === 0 && <Badge tone="green">Lowest listed price</Badge>}
+            {offer.id === lowestInStockOfferId && (
+              <Badge tone="green">Lowest in-stock price</Badge>
+            )}
             <strong>{money(offer.price_cents)}</strong>
             <button
               className="button secondary small"
