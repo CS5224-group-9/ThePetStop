@@ -231,6 +231,75 @@ class FacilityListViewTests(TestCase):
         self.assertIsNone(row["approved_animals"])
         self.assertNotIn("email", row)
 
+    def test_filters_before_pagination_and_orders_by_distance(self):
+        for index in range(25):
+            Facility.objects.create(
+                source_id="pet_shop",
+                source_key=f"shop-{index}",
+                facility_type="pet_shop",
+                name=f"Shop {index:02}",
+                address="Bishan",
+                postal_code="570001",
+                latitude=1.35 + index * 0.001,
+                longitude=103.84,
+                approved_animals=["cat"],
+                source="AVS",
+                source_url="https://example.test/registry",
+                source_document_url="https://example.test/registry.pdf",
+                last_checked_at=timezone.now(),
+                last_seen_run=self.facility.last_seen_run,
+            )
+        response = APIClient().get(
+            "/api/v1/facilities/",
+            {
+                "type": "pet_shop",
+                "animal": "cat",
+                "lat": 1.35,
+                "lng": 103.84,
+                "radius_km": 1,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 9)
+        self.assertEqual(
+            [row["name"] for row in response.json()["results"]],
+            [f"Shop {index:02}" for index in range(9)],
+        )
+
+        page = (
+            APIClient()
+            .get(
+                "/api/v1/facilities/",
+                {
+                    "type": "pet_shop",
+                    "animal": "cat",
+                    "lat": 1.35,
+                    "lng": 103.84,
+                    "radius_km": 5,
+                },
+            )
+            .json()
+        )
+        self.assertEqual(page["count"], 25)
+        self.assertIsNotNone(page["next"])
+        self.assertEqual(
+            [row["name"] for row in page["results"]],
+            [f"Shop {index:02}" for index in range(20)],
+        )
+
+    def test_invalid_filter_parameters(self):
+        for params in (
+            {"lat": 1},
+            {"radius_km": 5},
+            {"lat": "nan", "lng": 2},
+            {"type": "other"},
+            {"animal": "horse"},
+            {"lat": 1, "lng": 2, "radius_km": 0},
+        ):
+            self.assertEqual(
+                APIClient().get("/api/v1/facilities/", params).status_code, 400
+            )
+
     def test_list_is_read_only(self):
         self.assertEqual(APIClient().post("/api/v1/facilities/").status_code, 405)
 
