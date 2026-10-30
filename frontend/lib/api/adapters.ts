@@ -1,4 +1,5 @@
 import { ApiError } from "./client.ts";
+import { reminderStatus } from "../reminders.ts";
 import type {
   CartItem,
   Category,
@@ -8,8 +9,10 @@ import type {
   Order,
   Pet,
   PetDocument,
+  PetInput,
   Product,
   Profile,
+  RecordInput,
   Reminder,
 } from "./types.ts";
 export type Row = Record<string, unknown>;
@@ -78,46 +81,104 @@ export function profile(value: unknown): Profile {
     merchant: v.merchant ? merchant(v.merchant) : null,
   };
 }
+/** Display model for a care record; shared by API and local mode. */
+export function recordView(id: string, input: RecordInput): HealthRecord {
+  return {
+    id,
+    title: input.name,
+    kind: label(input.record_type),
+    record_type: input.record_type,
+    date: input.date,
+    next_due: input.next_due ?? "",
+    clinic: input.clinic,
+    notes: input.notes ?? "",
+  };
+}
 export function healthRecord(value: unknown): HealthRecord {
   const v = object(value);
-  return {
-    id: identifier(v.id),
-    title: text(v.name),
-    kind: label(text(v.record_type)),
+  return recordView(identifier(v.id), {
+    name: text(v.name),
+    record_type: text(v.record_type),
     date: text(v.date),
-    next_due: text(v.next_due),
+    next_due: typeof v.next_due === "string" ? v.next_due : null,
     clinic: text(v.clinic),
+    notes: text(v.notes),
+  });
+}
+/** Display model for a pet from its raw values; shared by API and local mode. */
+export function petView(
+  id: string,
+  values: PetInput,
+  extras: {
+    photo_url: string | null;
+    photo_version: string | null;
+    records: HealthRecord[];
+  },
+): Pet {
+  return {
+    id,
+    name: values.name,
+    species: label(values.species),
+    breed: values.breed || "Not recorded",
+    sex: label(values.sex || "unknown"),
+    date_of_birth: values.date_of_birth ?? "",
+    microchip: values.microchip_no ?? "",
+    photo_url: extras.photo_url,
+    photo_version: extras.photo_version,
+    weight:
+      typeof values.weight_kg === "number"
+        ? `${values.weight_kg} kg`
+        : "Not recorded",
+    allergies: values.allergies.join(", ") || "None recorded",
+    diet: values.diet_notes || "Not recorded",
+    records: extras.records,
+    values,
   };
 }
 export function pet(value: unknown, records: HealthRecord[] = []): Pet {
   const v = object(value);
-  return {
-    id: identifier(v.id),
+  const values: PetInput = {
     name: text(v.name),
-    species: label(text(v.species)),
-    breed: text(v.breed, "Not recorded"),
-    sex: label(text(v.sex, "unknown")),
-    date_of_birth: text(v.date_of_birth),
-    microchip: text(v.microchip_no),
-    photo_url: typeof v.photo_url === "string" ? v.photo_url : null,
-    weight:
-      typeof v.weight_kg === "number" ? `${v.weight_kg} kg` : "Not recorded",
-    allergies:
-      rows(v.allergies)
-        .filter((x) => typeof x === "string")
-        .join(", ") || "None recorded",
-    diet: text(v.diet_notes, "Not recorded"),
-    records,
+    species: text(v.species),
+    breed: text(v.breed),
+    sex: text(v.sex) || "unknown",
+    date_of_birth: typeof v.date_of_birth === "string" ? v.date_of_birth : null,
+    microchip_no:
+      typeof v.microchip_no === "string" && v.microchip_no
+        ? v.microchip_no
+        : null,
+    allergies: rows(v.allergies).filter(
+      (x): x is string => typeof x === "string",
+    ),
+    diet_notes: text(v.diet_notes),
+    weight_kg:
+      typeof v.weight_kg === "number" && Number.isFinite(v.weight_kg)
+        ? v.weight_kg
+        : null,
   };
+  return petView(identifier(v.id), values, {
+    photo_url: typeof v.photo_url === "string" ? v.photo_url : null,
+    photo_version:
+      typeof v.photo_version === "string" && v.photo_version
+        ? v.photo_version
+        : null,
+    records,
+  });
 }
 export function reminder(value: unknown): Reminder {
   const v = object(value);
+  const due_date = text(v.due_at).slice(0, 10),
+    done = v.done === true;
   return {
     id: identifier(v.id),
     pet_id: optionalId(v.pet),
     title: text(v.title),
-    due_date: text(v.due_at).slice(0, 10),
-    done: v.done === true,
+    due_date,
+    done,
+    health_record_id: optionalId(v.health_record),
+    ...(typeof v.is_overdue === "boolean" && typeof v.is_due_soon === "boolean"
+      ? { is_overdue: v.is_overdue, is_due_soon: v.is_due_soon }
+      : reminderStatus(due_date, done)),
   };
 }
 export function product(
@@ -309,5 +370,6 @@ export function document(value: unknown): PetDocument {
     size_bytes: amount(v.size_bytes),
     uploaded_at: text(v.uploaded_at),
     download_url: text(v.download_url),
+    health_record_id: optionalId(v.health_record),
   };
 }

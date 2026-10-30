@@ -5,6 +5,21 @@ export type HealthRecord = {
   date: string;
   next_due: string;
   clinic: string;
+  /** Raw enum value (for example "vaccination"); `kind` is its display label. */
+  record_type: string;
+  notes: string;
+};
+/** Raw, writable pet values as sent to and received from the API. */
+export type PetInput = {
+  name: string;
+  species: string;
+  breed: string;
+  sex: string;
+  date_of_birth: string | null;
+  microchip_no: string | null;
+  allergies: string[];
+  diet_notes: string;
+  weight_kg?: number | null;
 };
 export type Pet = {
   id: string;
@@ -15,20 +30,23 @@ export type Pet = {
   date_of_birth: string;
   microchip: string;
   photo_url: string | null;
+  /** Changes only when a new photo is completed; the photo cache key. */
+  photo_version: string | null;
   weight: string;
   allergies: string;
   diet: string;
   records: HealthRecord[];
+  /** Raw values for edit forms; the fields above are display labels. */
+  values: PetInput;
 };
-export type NewPetInput = {
+export type NewPetInput = PetInput;
+export type RecordInput = {
   name: string;
-  species: string;
-  breed: string;
-  sex: string;
-  date_of_birth: string;
-  microchip_no: string | null;
-  allergies: string[];
-  diet_notes: string;
+  record_type: string;
+  date: string;
+  next_due: string | null;
+  clinic: string;
+  notes?: string;
 };
 export type Reminder = {
   id: string;
@@ -36,6 +54,16 @@ export type Reminder = {
   title: string;
   due_date: string;
   done: boolean;
+  /** "" when the reminder is not linked to a care record. */
+  health_record_id: string;
+  is_overdue: boolean;
+  is_due_soon: boolean;
+};
+export type ReminderUpdate = {
+  title?: string;
+  due_at?: string;
+  done?: boolean;
+  health_record?: string | null;
 };
 export type Merchant = { id: string; slug: string; name: string };
 export type Category = { id: string; slug: string; name: string };
@@ -113,7 +141,10 @@ export type PetDocument = {
   size_bytes: number;
   uploaded_at: string;
   download_url: string;
+  /** "" when the document is not linked to a care record. */
+  health_record_id: string;
 };
+export type DocumentUpdate = { title?: string; health_record?: string | null };
 export type ShippingInput = {
   shipping_name: string;
   shipping_phone: string;

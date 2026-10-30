@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useApp } from "./app-provider";
 import { Icon } from "./ui";
 import { nextPath } from "@/lib/format";
+import { devAuthEnabled } from "@/lib/auth/dev";
 
 const navigation = [
   { href: "/", label: "Overview", mobile: "Home", icon: "grid" },
@@ -78,11 +79,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   <span>
                     {state.profile?.display_name || "Account"}
                     <small>
-                      {localUI
-                        ? "Local workspace"
-                        : state.role === "merchant"
-                          ? "Merchant"
-                          : "Pet owner"}
+                      {devAuthEnabled()
+                        ? `Dev sign-in · ${state.role === "merchant" ? "Merchant" : "Pet owner"}`
+                        : localUI
+                          ? "Local workspace"
+                          : state.role === "merchant"
+                            ? "Merchant"
+                            : "Pet owner"}
                     </small>
                   </span>
                   <span className="account-chevron">⌄</span>
