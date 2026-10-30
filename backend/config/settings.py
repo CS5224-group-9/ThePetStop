@@ -18,6 +18,8 @@ from urllib.parse import quote
 import dj_database_url
 from dotenv import load_dotenv
 
+from config.dev_auth import authentication_classes, dev_auth_enabled
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -45,6 +47,10 @@ else:
     SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+
+# Local development sign-in (`Authorization: Dev <handle>`): needs DEBUG, an
+# explicit DJANGO_DEV_AUTH=true and no AWS Lambda (an opt-in there raises).
+DEV_AUTH_ENABLED = dev_auth_enabled(os.environ, DEBUG)
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
 
@@ -171,10 +177,7 @@ CORS_ALLOWED_ORIGINS = env_list("DJANGO_CORS_ALLOWED_ORIGINS")
 
 REST_FRAMEWORK = {
     # Cognito comes first so a missing login gets 401; sessions serve the admin
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "api.authentication.CognitoAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": authentication_classes(DEV_AUTH_ENABLED),
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
@@ -190,6 +193,77 @@ REST_FRAMEWORK = {
 COGNITO_ISSUER = os.environ.get("COGNITO_ISSUER", "")
 COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID", "")
 COGNITO_JWKS = os.environ.get("COGNITO_JWKS", "")
+
+
+RUNNING_IN_LAMBDA = "AWS_LAMBDA_FUNCTION_NAME" in os.environ
+
+# Private pet files. S3 when PET_FILES_BUCKET is set; local signed URLs on this
+# server in DEBUG outside Lambda; otherwise disabled (file routes return 503).
+PET_FILES_BUCKET = os.environ.get("PET_FILES_BUCKET", "")
+PET_FILES_REGION = (
+    os.environ.get("PET_FILES_REGION")
+    or os.environ.get("AWS_REGION")
+    or "ap-southeast-1"
+)
+PET_FILES_ENDPOINT_URL = os.environ.get("PET_FILES_ENDPOINT_URL", "")
+PET_FILES_LOCAL_DIR = os.environ.get("PET_FILES_LOCAL_DIR") or str(
+    BASE_DIR / ".local-storage"
+)
+PET_FILES_LOCAL_URL = (
+    os.environ.get("PET_FILES_LOCAL_URL") or "http://localhost:8000/api/v1/local-files/"
+).rstrip("/") + "/"
+if PET_FILES_BUCKET:
+    PET_FILES_BACKEND = "s3"
+elif DEBUG and not RUNNING_IN_LAMBDA:
+    PET_FILES_BACKEND = "local"
+else:
+    PET_FILES_BACKEND = "disabled"
+
+if PET_FILES_BACKEND == "local":
+    # Local file URLs carry a signed token in the path; keep it out of the
+    # runserver console and request logs (never log presigned URLs).
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "filters": {
+            "require_debug_true": {"()": "django.utils.log.RequireDebugTrue"},
+            "redact_local_files": {"()": "api.log_filters.RedactLocalFileTokens"},
+        },
+        "formatters": {
+            "django.server": {
+                "()": "django.utils.log.ServerFormatter",
+                "format": "[{server_time}] {message}",
+                "style": "{",
+            },
+        },
+        "handlers": {
+            # require_debug_true as in Django's default, so tests stay quiet
+            "console": {
+                "class": "logging.StreamHandler",
+                "filters": ["require_debug_true", "redact_local_files"],
+            },
+            "django.server": {
+                "class": "logging.StreamHandler",
+                "formatter": "django.server",
+                "filters": ["redact_local_files"],
+            },
+        },
+        "loggers": {
+            "django": {"handlers": ["console"], "level": "INFO"},
+            "django.server": {
+                "handlers": ["django.server"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }
+elif PET_FILES_BACKEND == "s3":
+    # Lambda's root logger stays at WARNING; let the INFO HeadObject 403 hint through
+    LOGGING = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "loggers": {"api.storage": {"level": "INFO"}},
+    }
 
 
 # Email
