@@ -2,7 +2,7 @@
 
 A web app for pet owners in Singapore, built as a CS5224 group project. The MVP covers verified discovery of AVS-licensed vets and pet shops, pet profiles with health records and reminders, and a multi-merchant marketplace with simulated checkout.
 
-The project is at the scaffolding stage: the backend foundation (settings, PostgreSQL, user model, `/health/` and `/me/`) is in place, but no feature is implemented yet.
+The backend foundation (settings, PostgreSQL, user model, `/health/` and `/me/`) is in place. Pet profiles and the marketplace catalogue are implemented; see [docs/architecture.md](docs/architecture.md) for the current state.
 
 ## Layout
 
@@ -24,13 +24,18 @@ Database, from the repository root (needs Docker Desktop running):
 docker compose up -d
 ```
 
+PostgreSQL listens on `127.0.0.1:5432`. If that port is taken, set `PETSTOP_DB_PORT` in the shell or in a root `.env` (see [.env.example](.env.example)) and use the same port in `backend/.env` `DATABASE_URL`.
+
 Backend, from `backend/`. The first time, create `.env` as described in [backend/README.md](backend/README.md#environment-variables).
 
 ```powershell
 uv sync
 uv run python .\manage.py migrate
+uv run python .\manage.py seed_pets
 uv run python .\manage.py runserver
 ```
+
+`seed_pets` adds demo pets, records and reminders for the local dev users. For the offline dev sign-in, or to sign in through the real Cognito pool, follow [Run pet profiles locally](backend/README.md#run-pet-profiles-locally).
 
 Frontend, from `frontend/`:
 

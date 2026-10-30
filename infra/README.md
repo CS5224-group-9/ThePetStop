@@ -42,13 +42,13 @@ yarn cdk bootstrap aws://<ACCOUNT_ID>/ap-southeast-1
 
 Defined in `bin/infra.ts`, one file each in `lib/`:
 
-| Stack                 | Contains                                                                                                                                                                                                               |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PetStop-Dev-Network` | VPC with isolated subnets in two AZs and no NAT gateway; S3 gateway endpoint; Secrets Manager interface endpoint in one AZ; security groups for the app Lambdas and the database                                       |
-| `PetStop-Dev-Data`    | RDS PostgreSQL 16 `db.t4g.micro` with a generated credentials secret, 7-day backups and deletion protection; the Django secret key. Termination protection is on.                                                      |
-| `PetStop-Dev-Storage` | S3 buckets `Web`, `ProductImages` (served at `/product-images/*`) and private, versioned `PetFiles`; CloudFront with OAC and a function that maps `/x/` to `/x/index.html`                                             |
-| `PetStop-Dev-Auth`    | Cognito user pool with managed login, the public SPA client (code + PKCE), groups `owner` and `merchant`, a trigger that adds `email` to access tokens, and a deploy-time fetch of the pool's public keys              |
-| `PetStop-Dev-Api`     | The Django image as two Lambdas in the VPC (`ApiFunction` for requests, `ManageFunction` for migrations); HTTP API whose catch-all route requires a Cognito JWT, with public `GET` routes for health and the catalogue |
+| Stack                 | Contains                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PetStop-Dev-Network` | VPC with isolated subnets in two AZs and no NAT gateway; S3 gateway endpoint; Secrets Manager interface endpoint in one AZ; security groups for the app Lambdas and the database                                                                                                                                                                                         |
+| `PetStop-Dev-Data`    | RDS PostgreSQL 16 `db.t4g.micro` with a generated credentials secret, 7-day backups and deletion protection; the Django secret key. Termination protection is on.                                                                                                                                                                                                        |
+| `PetStop-Dev-Storage` | S3 buckets `Web`, `ProductImages` (served at `/product-images/*`) and private, versioned `PetFiles` (a lifecycle rule expires noncurrent versions after 7 days, removes expired delete markers and aborts incomplete multipart uploads after 1 day); CloudFront with OAC and a function that maps `/x/` to `/x/index.html`                                               |
+| `PetStop-Dev-Auth`    | Cognito user pool with managed login, the public SPA client (code + PKCE), groups `owner` and `merchant`, a trigger that adds `email` to access tokens, and a deploy-time fetch of the pool's public keys                                                                                                                                                                |
+| `PetStop-Dev-Api`     | The Django image as two Lambdas in the VPC (`ApiFunction` for requests, `ManageFunction` for migrations); both get `PET_FILES_BUCKET`, and only `ApiFunction` may put, get and delete `PetFiles` objects under `pets/*` (object ARNs only, no list access); HTTP API whose catch-all route requires a Cognito JWT, with public `GET` routes for health and the catalogue |
 
 All Lambda logs keep 14 days. Expect roughly US$25–35 a month, mostly RDS and the Secrets Manager endpoint; check the Budgets alarm after the first week.
 
@@ -86,7 +86,7 @@ Remove-Item cdk-assume.json
 
 ## Deploying by hand
 
-The same steps from a laptop, for a first deploy or when the workflow is broken. From `infra/`:
+The same steps from a laptop, for a first deploy or when the workflow is broken. `backend/.dockerignore` excludes `.local-storage` (the local storage backend's pet files), so a laptop deploy never ships local test files. From `infra/`:
 
 1. Deploy, then note the outputs it prints (`ApiBaseUrl`, `ManageFunctionName`, `FrontendUrl`, `WebBucketName`, `DistributionId`, `CognitoIssuer`, `CognitoClientId`, `CognitoDomain`):
 

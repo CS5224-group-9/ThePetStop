@@ -5,6 +5,7 @@ import { HttpJwtAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { AuthStack } from './auth-stack';
@@ -66,6 +67,9 @@ export class ApiStack extends cdk.Stack {
         COGNITO_ISSUER: auth.issuer,
         COGNITO_CLIENT_ID: auth.client.userPoolClientId,
         COGNITO_JWKS: auth.jwks,
+        // Both functions get it so settings load the same way for migrate and check.
+        // The region comes from AWS_REGION, which Lambda sets.
+        PET_FILES_BUCKET: storage.petFilesBucket.bucketName,
       },
     };
 
@@ -76,6 +80,17 @@ export class ApiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(29),
       logGroup: twoWeekLogGroup(this, 'ApiFunctionLogs'),
     });
+
+    // Presigned PUT/GET and the upload completion check (HeadObject needs GetObject).
+    // Object ARNs only: no ListBucket, so the API cannot enumerate other pets' files.
+    // Not grantReadWrite, which adds s3:List* and s3:GetBucket*. ManageFunction gets
+    // no S3 access.
+    apiFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'],
+        resources: [storage.petFilesBucket.arnForObjects('pets/*')],
+      }),
+    );
 
     // Invoked by the deploy workflow with {"command": "migrate"}
     const manageFunction = new lambda.DockerImageFunction(this, 'ManageFunction', {
