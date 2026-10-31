@@ -28,8 +28,8 @@ Backend, from `backend/`. The first time, create `.env` as described in [backend
 
 ```powershell
 uv sync
-uv run python .\manage.py migrate
-uv run python .\manage.py runserver
+uv run python manage.py migrate
+uv run python manage.py runserver
 ```
 
 Frontend, from `frontend/`:

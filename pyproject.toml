@@ -1,0 +1,36 @@
+[project]
+name = "backend"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "apig-wsgi>=2.20.0",
+    "boto3>=1.43.116",
+    "dj-database-url>=3.1.2",
+    "django>=6.1.2",
+    "django-cors-headers>=4.9.0",
+    "djangorestframework>=3.18.1",
+    "psycopg[binary]>=3.3.6",
+    "pyjwt[crypto]>=2.15.1",
+    "python-dotenv>=1.2.4",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+extend-exclude = ["**/migrations/*.py"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, B bugbear, UP pyupgrade, DJ flake8-django, S bandit
+select = ["E", "W", "F", "I", "B", "UP", "DJ", "S"]
+# Line length is left to the formatter
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# assert and fake credentials are normal in tests
+"**/tests/**" = ["S101", "S105", "S106"]
+"**/tests.py" = ["S101", "S105", "S106"]
