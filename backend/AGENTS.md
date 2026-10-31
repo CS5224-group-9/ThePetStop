@@ -55,6 +55,6 @@ uv run python .\manage.py test
 uv run python .\manage.py runserver
 ```
 
-Ruff is the linter and formatter, configured in `pyproject.toml`; migrations are excluded. CI runs `ruff check`, `ruff format --check` and `manage.py check`. Fix lint findings rather than adding `noqa`; the one `noqa` on `SECRET_KEY` goes when the key moves to the environment.
+Ruff is the linter and formatter, configured in `pyproject.toml`; migrations are excluded. CI runs `ruff check`, `ruff format --check`, `manage.py check`, Django tests against PostgreSQL, and the isolated Floci recovery suite. Fix lint findings rather than adding `noqa`.
 
 Use `README.md` for the fuller setup guide. If a command cannot run in the current environment, report that limitation and the check that was attempted.

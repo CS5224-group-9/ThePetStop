@@ -82,14 +82,16 @@ Requests for another user's pet, record, file, reminder or order return **404**,
 
 ### Facility data
 
-The sync runs in two steps, because the Lambda that can reach RDS has no internet access (see the outbound-access decision under [Decisions](#decisions)):
+The fetch Lambda runs outside the VPC, downloads and validates the AVS registries,
+and dispatches address batches to a FIFO queue for OneMap geocoding. Complete
+snapshots are written under `ready/` in S3. The load Lambda runs inside the VPC,
+reads each snapshot and updates the facility records transactionally. A separate
+reconciler repairs interrupted runs and missing notifications.
 
-1. `manage.py fetch_facilities` runs **outside the VPC**. It downloads the AVS registries of licensed pet shops and veterinary centres, parses and validates them, and geocodes each address through OneMap, by postal code first. It writes the result as JSON, to S3 in AWS or to a file locally.
-2. `manage.py load_facilities` runs **inside the VPC**. It reads that JSON, through the free S3 gateway endpoint, and upserts `Facility` rows. Each row stores the source, licence number and `last_checked_at`; facilities missing from the registry are marked inactive.
-
-Sprint 1 runs both steps once by hand. From Sprint 2, EventBridge Scheduler runs the fetch weekly, and an S3 event on the new JSON in `sync` starts the load, so the load never runs before the file exists. Geocoding failures go into a report for manual fixing; they are never silently dropped.
-
-A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so local development, tests and a first deploy work without calling AVS or OneMap. If the AVS format turns out awkward, this snapshot is the fallback and the weekly sync becomes a stretch goal.
+The ingestion stack is opt-in and its schedules remain disabled until AWS
+acceptance. No facility snapshot fixture is currently committed. See the
+[operations guide](facility-ingestion-operations.md) for local setup, recovery
+and AWS acceptance checks.
 
 ### Reminders
 
@@ -99,12 +101,22 @@ A cleaned snapshot is committed as `facilities/fixtures/facilities.json`, so loc
 
 ## Current state
 
+Facility ingestion update (28 October 2026): the registry models and three main
+handlers are implemented, along with durable S3 status events, recovery/failure
+handlers, PostgreSQL history, snapshot review and deterministic Floci checks.
+The optional `PetStop-Dev-FacilityIngestion` CDK stack keeps schedules disabled.
+Only its loader enters the existing VPC; other workers retain internet access.
+See [the operations runbook](facility-ingestion-operations.md) for the current
+resource contract and outstanding AWS acceptance. Backend CI runs Django
+tests with PostgreSQL; a separate, path-filtered workflow runs the isolated
+Floci recovery suite.
+
 Checked 2026-10-25 against the working tree.
 
 | Area | What exists |
 | --- | --- |
 | Frontend | Static-export frontend that defaults to local sample data, browser-persisted profiles/reminders/cart/orders, a live OneMap facility map with sample pins, browser geolocation, and merchant editing. Explicit API mode retains configurable Cognito OIDC/PKCE, pet/document/cart/order operations and MapLibre/OneMap. Backend feature endpoints and actual AWS configuration remain unimplemented here; see `docs/frontend-integration.md` for the proposed wire contract and deployment boundary. |
-| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally, Secrets Manager in AWS). Apps: `api` (shared error format, Cognito authentication and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`, which returns `groups` and a `merchant` that is always null for now), empty `pets`, `facilities` with public OneMap address search (registry models/endpoints still absent), and `marketplace` with catalogue models, migration, public category/merchant/product APIs, comparison offers, and an idempotent fixture loader. `Dockerfile` and `config/lambda_handler.py` package it for Lambda. Django tests cover `/me/`, `/health/` and token validation. |
+| Backend | Django project `config/`, with settings read from the environment (`backend/.env` locally, Secrets Manager in AWS). Apps: `api` (shared error format, Cognito authentication and `GET /api/v1/health/`), `accounts` (`User` and `GET /api/v1/me/`, which returns `groups` and a `merchant` that is always null for now), empty `pets`, `facilities` with registry models, ingestion and public OneMap address search (facility list/detail endpoints are still absent), and `marketplace` with catalogue models, migration, public category/merchant/product APIs, comparison offers, and an idempotent fixture loader. `Dockerfile` and `config/lambda_handler.py` package it for Lambda. Django tests cover `/me/`, `/health/` and token validation. |
 | Database | PostgreSQL 16 in Docker Compose (`docker-compose.yml` at the repo root), read through `DATABASE_URL`. `accounts.User` is the user model from the first migration. |
 | Auth | `api.authentication.CognitoAuthentication` verifies Cognito access tokens (issuer, `client_id`, `token_use`, signature) and maps `sub` to `accounts.User`; session auth remains for the admin. A missing login returns 401. A pre-token-generation trigger adds `email` to access tokens. Users are not added to `owner` automatically; anyone not in `merchant` is treated as an owner. |
 | Files, external data | None. |
