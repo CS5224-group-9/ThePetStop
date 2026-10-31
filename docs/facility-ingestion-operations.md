@@ -2,9 +2,9 @@
 
 The same handlers run locally in Floci and in the optional CDK ingestion stack. Fetch/geocode/reconcile/failure capture run outside the AWS VPC. Only the load/status function enters the existing isolated subnets and reads the RDS/Django secrets. SQS FIFO uses one message group across both registries; no Celery service is required.
 
-Loader concurrency is capped at two to bound its PostgreSQL connections during
-status replays. Geocoding and reconciliation each have concurrency one. Status
-events remain queued for delivery while the loader is busy.
+No ingestion function reserves concurrency. Geocoding processes one batch at a
+time because all messages share a FIFO message group. Loader and reconciliation
+invocations have no dedicated concurrency cap.
 
 ## Run history and data safety
 
@@ -32,7 +32,7 @@ Resolved geocodes are cached for `GEOCODE_CACHE_MAX_AGE_DAYS` (default 90). Per-
 
 Automatic reconciliation runs every 15 minutes when schedules are enabled. It waits at least 15 minutes before repairing new runs, resets the retry budget when batch progress advances, and bounds unsuccessful recovery to five attempts and `FACILITY_MAX_RUN_AGE_HOURS` (default 24). Permanent failures stay stopped until an operator requests retry. A successful load writes `loaded/<source>/<run_id>.json` after committing; replay is safe if receipt writing itself fails.
 
-Inspect `failed/`, `quarantine/`, `work-failures/`, `invocation-failures/`, SQS DLQs, and the run's admin events when investigating. Exceptions contain safe codes, not upstream bodies or credentials. Structured logs include run/source/stage/batch IDs. CloudWatch metrics track failures, quarantine and dataset age; alarms cover Lambda errors, old work, DLQs, and data older than eight days. After a DLQ message is archived, retry uses the original run manifest rather than requiring that queue message to remain available.
+Inspect `failed/`, `quarantine/`, `work-failures/`, `invocation-failures/`, SQS DLQs, and the run's admin events when investigating. Exceptions contain safe codes, not upstream bodies or credentials. Structured logs include run/source/stage/batch IDs. Alarms cover failed runs, data older than eight days, and the failure-capture DLQ. After a DLQ message is archived, retry uses the original run manifest rather than requiring that queue message to remain available.
 
 The single FIFO group serializes ingestion pacing at 75 attempts/minute. Interactive OneMap traffic uses its own client, so it also contributes to the provider's account quota. The initial 75 limit leaves headroom; it is not a global account-wide quota coordinator.
 
@@ -83,12 +83,11 @@ write, and checks that rejected creates/updates preserve the original contents.
 AWS clients keep their normal connection pooling. No read-then-overwrite fallback
 is used.
 
-Floci also drops direct S3-to-Lambda notices when reserved concurrency is full.
-The suite invokes the actual reconciler after a malformed fetch to verify that
-its durable failed event is projected even if the first notice was lost. Keep
-the loader's database concurrency limit; use reconciliation to repair missing
-notices. Local schedules are manual, while the disabled AWS stack includes the
-15-minute reconciliation rule for activation after staging acceptance.
+Direct S3-to-Lambda notices can be lost. The suite invokes the actual reconciler
+after a malformed fetch to verify that its durable failed event is projected
+even if the first notice was lost; use reconciliation to repair missing notices.
+Local schedules are manual, while the disabled AWS stack includes the 15-minute
+reconciliation rule for activation after staging acceptance.
 
 Backend unit/database tests additionally inject partial dispatch, an interrupted query batch, rollback, stale snapshots, out-of-order status and count-drop approval. CI runs Django tests with PostgreSQL and the pinned Floci fixture suite without real credentials or live endpoints.
 
@@ -110,9 +109,8 @@ The stack outputs the artifact bucket, OneMap secret ARN, alert topic ARN, opera
 1. Apply backend migrations through the existing management Lambda.
 2. Populate the OneMap secret with `email` and `password` (and optionally `access_token`) through Secrets Manager. Do not place values in CDK context or Git.
 3. Subscribe the team's monitored destination to the alert topic and confirm the subscription. An unconfigured topic cannot notify anyone.
-   Dataset-age alarms also detect missing health reports; an uninitialized or
-   disabled pipeline can therefore show stale-data alarms until its first sync
-   and reconciliation report.
+   When schedules are enabled, dataset-age alarms also detect missing health
+   reports and can alert until the first sync and reconciliation report.
 4. Attach the output recovery-operator policy to the approved operator role. It allows reviewed snapshot approval and invoking reconciliation. The general API role is not given these privileges.
 5. Run a manual AWS sync and inspect the first dataset before public use. Verify actual IAM, secret reads, private RDS access, async destinations, DLQ redrive and a controlled outage/replay on a staging dataset.
 6. Enable the weekly rules and 15-minute reconciliation only after those checks pass. Schedules are disabled in code by default. Weekly source starts use separate UTC hours; record the desired business schedule before changing them.
@@ -120,6 +118,13 @@ The stack outputs the artifact bucket, OneMap secret ARN, alert topic ARN, opera
 Keep versioned raw documents, snapshots and invocation failures for investigation. The bucket is retained on stack deletion; cache objects expire after 90 days and old object versions after 30 days. Choose any additional primary-artifact retention policy with the team instead of deleting evidence during recovery.
 
 Production readiness requires verified alerts and recovery on AWS. Local green checks establish application behavior and emulator integration, not AWS acceptance.
+
+## Verification record — 31 October 2026
+
+- The CDK template tests, TypeScript build and formatting check pass without
+  reserved concurrency.
+- The Floci fixture suite passes without a loader concurrency reservation,
+  including lost-status reconciliation and database-outage replay.
 
 ## Verification record — 28 October 2026
 
