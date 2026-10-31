@@ -268,31 +268,7 @@ export class FacilityIngestionStack extends cdk.Stack {
       });
       item.addAlarmAction(new actions.SnsAction(alerts));
     };
-    for (const [name, queue] of [
-      ['WorkDlq', workDlq],
-      ['InvocationFailures', failures],
-      ['FailureCaptureDlq', captureDlq],
-    ] as const) {
-      alarm(`${name}NotEmpty`, queue.metricApproximateNumberOfMessagesVisible());
-    }
-    alarm('OldQueuedWork', work.metricApproximateAgeOfOldestMessage(), 1800);
-    alarm(
-      'QuarantinedMessages',
-      new cloudwatch.Metric({
-        namespace: 'PetStop/FacilityIngestion',
-        metricName: 'QuarantinedMessages',
-        statistic: 'Sum',
-      }),
-    );
-    for (const [name, fn] of [
-      ['Fetch', fetch],
-      ['Geocode', geocode],
-      ['Load', load],
-      ['Reconcile', reconcile],
-      ['Failure', failure],
-    ] as const) {
-      alarm(`${name}Errors`, fn.metricErrors({ statistic: 'Sum' }));
-    }
+    alarm('FailureCaptureDlqNotEmpty', captureDlq.metricApproximateNumberOfMessagesVisible());
     for (const source of ['vet', 'pet_shop']) {
       alarm(
         `${source}RunFailures`,
@@ -313,7 +289,9 @@ export class FacilityIngestionStack extends cdk.Stack {
           period: cdk.Duration.minutes(30),
         }),
         192,
-        cloudwatch.TreatMissingData.BREACHING,
+        props.enableSchedules
+          ? cloudwatch.TreatMissingData.BREACHING
+          : cloudwatch.TreatMissingData.NOT_BREACHING,
       );
     }
     new cloudwatch.Dashboard(this, 'Dashboard', {

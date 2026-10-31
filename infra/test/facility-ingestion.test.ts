@@ -56,10 +56,29 @@ test('internet workers are outside the VPC and only loader gets DB secrets', () 
 test('schedules stay disabled and alarms publish to the alert topic', () => {
   template.resourceCountIs('AWS::Events::Rule', 3);
   template.allResourcesProperties('AWS::Events::Rule', { State: 'DISABLED' });
-  template.hasResourceProperties('AWS::CloudWatch::Alarm', { AlarmActions: Match.anyValue() });
+  template.resourceCountIs('AWS::CloudWatch::Alarm', 5);
+  template.allResourcesProperties('AWS::CloudWatch::Alarm', { AlarmActions: Match.anyValue() });
   template.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'DataAgeHours',
+    TreatMissingData: 'notBreaching',
+  });
+  template.resourceCountIs('AWS::CloudWatch::Dashboard', 1);
+});
+
+test('enabled schedules alert on missing data age reports', () => {
+  const enabledApp = new cdk.App();
+  const enabledNetwork = new NetworkStack(enabledApp, 'Network', { env });
+  const enabledData = new DataStack(enabledApp, 'Data', { env, network: enabledNetwork });
+  const enabled = Template.fromStack(
+    new FacilityIngestionStack(enabledApp, 'IngestionEnabled', {
+      env,
+      network: enabledNetwork,
+      data: enabledData,
+      enableSchedules: true,
+    }),
+  );
+  enabled.hasResourceProperties('AWS::CloudWatch::Alarm', {
     MetricName: 'DataAgeHours',
     TreatMissingData: 'breaching',
   });
-  template.resourceCountIs('AWS::CloudWatch::Dashboard', 1);
 });
