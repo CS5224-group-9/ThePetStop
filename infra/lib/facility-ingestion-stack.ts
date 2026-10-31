@@ -187,10 +187,22 @@ export class FacilityIngestionStack extends cdk.Stack {
       ['cache', 'coordination', 'results', 'ready', 'status', 'failed', 'quarantine'],
       true,
     );
+    geocode.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:ListBucket'],
+        resources: [bucket.bucketArn],
+      }),
+    );
     oneMap.grantRead(geocode);
     geocode.addEventSource(new sources.SqsEventSource(work, { batchSize: 1 }));
     allow(load, ['status', 'ready', 'approvals'], false);
     allow(load, ['loaded', 'projected', 'status', 'failed', 'quarantine'], true);
+    load.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:ListBucket'],
+        resources: [bucket.bucketArn],
+      }),
+    );
     props.data.database.secret!.grantRead(load);
     props.data.djangoSecretKey.grantRead(load);
     allow(failure, ['status', 'failed', 'invocation-failures'], true);
