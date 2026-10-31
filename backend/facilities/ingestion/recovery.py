@@ -1,6 +1,7 @@
 """Bounded repair of interrupted runs; no database or live-source bypass."""
 
 import json
+import logging
 import os
 import time
 from datetime import datetime
@@ -217,25 +218,19 @@ def handler(event, context):
     for key in keys(s3, bucket, "control/"):
         if context and context.get_remaining_time_in_millis() < 30000:
             break
-        control = status.read_json(s3, bucket, key)
         try:
-            results.append(
-                repair_run(
-                    s3,
-                    sqs,
-                    bucket,
-                    *status.identity(control["source"], control["run_id"]),
-                )
+            control = status.read_json(s3, bucket, key)
+            source, run_id = status.identity(control["source"], control["run_id"])
+        except (TypeError, KeyError, ValueError):
+            logging.getLogger(__name__).error(
+                "Skipping unreadable control artifact %s", key
             )
+            status.metric("QuarantinedMessages", 1)
+            continue
+        try:
+            results.append(repair_run(s3, sqs, bucket, source, run_id))
         except Exception as error:
-            status.fail(
-                s3,
-                bucket,
-                control["source"],
-                control["run_id"],
-                "queued",
-                type(error).__name__,
-            )
+            status.fail(s3, bucket, source, run_id, "queued", type(error).__name__)
     return {"runs_checked": len(results), "results": results}
 
 

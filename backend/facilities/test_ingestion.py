@@ -133,6 +133,38 @@ def snapshot(count=2):
 
 @patch.dict(os.environ, ENV)
 class IngestionUnitTests(SimpleTestCase):
+    def test_unreadable_control_artifacts_do_not_stop_reconciliation(self):
+        s3, sqs = FakeS3(), FakeSqs()
+        run_id = str(uuid4())
+        s3.objects["control/vet/0-corrupt.json"] = [{"Body": b"{"}]
+        status.put_json(
+            s3, "test-bucket", "control/vet/0-partial.json", {"source": "vet"}
+        )
+        status.put_json(s3, "test-bucket", "control/vet/0-missing.json", {})
+        status.put_json(
+            s3,
+            "test-bucket",
+            f"control/vet/{run_id}.json",
+            {"source": "vet", "run_id": run_id},
+        )
+        get_object = s3.get_object
+
+        def read_object(**kwargs):
+            if kwargs["Key"].endswith("0-missing.json"):
+                raise s3.Missing
+            return get_object(**kwargs)
+
+        with (
+            patch.object(s3, "get_object", side_effect=read_object),
+            patch.object(recovery, "client", lambda name: s3 if name == "s3" else sqs),
+            patch.object(recovery, "repair_run", return_value="waiting") as repair,
+            patch.object(status, "metric") as metric,
+        ):
+            result = recovery.handler({}, None)
+        self.assertEqual(result, {"runs_checked": 1, "results": ["waiting"]})
+        repair.assert_called_once_with(s3, sqs, "test-bucket", "vet", run_id)
+        self.assertEqual(metric.call_count, 3)
+
     def test_failure_logs_exclude_unvalidated_batch_fields(self):
         with patch.object(status, "emit") as emit:
             status.fail(
