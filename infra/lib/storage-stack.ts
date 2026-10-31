@@ -88,6 +88,17 @@ export class StorageStack extends cdk.Stack {
     this.petFilesBucket = new s3.Bucket(this, 'PetFiles', {
       ...privateBucket,
       versioned: true,
+      // A deleted vet report or photo must not linger, but a week still covers an
+      // accidental delete during the demo window.
+      lifecycleRules: [
+        {
+          id: 'PetFilesCleanup',
+          noncurrentVersionExpiration: cdk.Duration.days(7),
+          expiredObjectDeleteMarker: true,
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
+        },
+      ],
+      // The presigned PUT signs only content-length, content-type and host
       cors: [
         {
           allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT],

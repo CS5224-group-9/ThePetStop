@@ -1,0 +1,1403 @@
+openapi: 3.1.0
+info:
+  title: ThePetStop Pet Profiles API
+  version: 0.1.0
+  description: >-
+    Private, owner-scoped endpoints for pet profiles, vaccination and care
+    records, private vet documents, profile photos and in-app reminders. Every
+    operation requires an authenticated user (any role; merchants may own pets).
+    Every query is filtered by the authenticated owner: another owner's pet,
+    record, document or reminder returns 404 `not_found`, never 403, and a
+    foreign id inside a request body is rejected exactly like a nonexistent id
+    (400 `invalid`). All routes end in a slash; the API never redirects.
+    Lists are paginated with 20 items per page. Timestamps are ISO 8601 with
+    the Asia/Singapore offset (+08:00). Every response carries
+    `Cache-Control: no-store`.
+
+
+    Files are stored as opaque keys and never returned as permanent URLs.
+    Uploads are three steps: request an upload (the server returns a short-lived
+    presigned PUT URL signed for the exact Content-Type and Content-Length),
+    PUT the bytes directly to that URL with only a `Content-Type` header and no
+    Authorization header, then call the matching `complete` operation, which
+    verifies the stored object's size and type before the file becomes
+    visible. In AWS the URLs point at the private S3 bucket
+    (https://<bucket>.s3.ap-southeast-1.amazonaws.com/...). In local
+    development without a bucket they point at the Django server
+    (http://localhost:8000/api/v1/local-files/<signed-token>/); that route is
+    mounted only when the local storage backend is active and is not part of
+    this contract. Clients must treat upload and download URLs as opaque,
+    must not log them, and must not put them in navigation URLs. Presigned
+    downloads are served with `Cache-Control: private, no-store`. Pending
+    (never completed) uploads older than one hour are discarded by the server.
+
+
+    Validation errors use 400 `invalid` with `details` keyed by field. A
+    field's value is normally a list of messages; errors inside a list field
+    are an object keyed by the item index (for example
+    `{"allergies": {"3": ["Ensure this field has no more than 50
+    characters."]}}`). A write that collides with a concurrent change returns
+    400 `invalid` with `{"non_field_errors": ["This item changed. Refresh and
+    try again."]}`; read the object again and retry.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local Django API
+  - url: https://api.example.com/api/v1
+    description: Replace with the deployed API Gateway URL (stack output ApiBaseUrl)
+security:
+  - cognitoBearer: []
+tags:
+  - name: Pets
+    description: Pet profiles and profile photos
+  - name: Health records
+    description: Vaccination and care records of one pet
+  - name: Documents
+    description: Private vet reports of one pet (PDF, JPEG or PNG, up to 10 MB)
+  - name: Reminders
+    description: In-app care reminders across all of the owner's pets
+paths:
+  /pets/:
+    get:
+      tags: [Pets]
+      operationId: listPets
+      summary: List the authenticated owner's pets
+      description: >-
+        Ordered by creation time, oldest first. Read-only: it never changes
+        data. Each call returns new presigned `photo_url` values; use
+        `photo_version` to tell whether a photo actually changed.
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: A page of the owner's pets.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetPage'
+              example:
+                count: 1
+                next: null
+                previous: null
+                results:
+                  - id: 3f1c2a9e-8d7b-4c6a-9e21-5b0f7d2c4a11
+                    name: Kopi
+                    species: dog
+                    breed: Singapore Special
+                    sex: male
+                    date_of_birth: '2022-04-12'
+                    microchip_no: '702000000000011'
+                    allergies: [Chicken]
+                    diet_notes: Salmon-based dry food
+                    weight_kg: 14.2
+                    photo_url: null
+                    photo_version: null
+                    created_at: '2026-10-30T10:15:00.123456+08:00'
+                    updated_at: '2026-10-30T10:15:00.123456+08:00'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+    post:
+      tags: [Pets]
+      operationId: createPet
+      summary: Create a pet owned by the authenticated user
+      description: >-
+        Any `owner`, `id`, `photo_url` or `photo_version` in the body is
+        ignored. Only `name` and `species` are required. The response is the
+        full pet; clients may append it to their list without refetching.
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetWrite'
+            example:
+              name: Kopi
+              species: dog
+              breed: Singapore Special
+              sex: male
+              date_of_birth: '2022-04-12'
+              microchip_no: '702000000000011'
+              allergies: [Chicken]
+              diet_notes: Salmon-based dry food
+              weight_kg: 14.2
+      responses:
+        '201':
+          description: The created pet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /pets/{pet_id}/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+    get:
+      tags: [Pets]
+      operationId: retrievePet
+      summary: Get one of the owner's pets
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: The pet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Pets]
+      operationId: updatePet
+      summary: Partially update a pet
+      description: >-
+        Send only the fields to change. The response is the full pet, so
+        clients can update their copy without refetching. PUT is not supported
+        (405).
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PetWrite'
+            example:
+              weight_kg: 14.6
+              allergies: [Chicken, Beef]
+      responses:
+        '200':
+          description: The updated pet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Pets]
+      operationId: deletePet
+      summary: Delete a pet and everything attached to it
+      description: >-
+        Deletes the pet's health records, documents and reminders in the same
+        transaction. The pet's photo, any pending photo upload and all document
+        files are deleted from storage after the transaction commits (best
+        effort; a storage failure does not fail the request).
+      x-implementation-status: implemented
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /pets/{pet_id}/photo-upload/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+    post:
+      tags: [Pets]
+      operationId: requestPetPhotoUpload
+      summary: Request a presigned upload URL for a new profile photo
+      description: >-
+        Replaces any earlier pending (uncompleted) photo upload of this pet;
+        the earlier pending object is deleted. The current photo is unchanged
+        until the new upload is completed. JPEG or PNG, at most 5 MiB
+        (5242880 bytes).
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoUploadRequest'
+            example:
+              content_type: image/jpeg
+              size_bytes: 482113
+      responses:
+        '200':
+          description: Upload instructions, valid for 15 minutes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadTicket'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/StorageUnavailable'
+  /pets/{pet_id}/photo-upload/complete/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+    post:
+      tags: [Pets]
+      operationId: completePetPhotoUpload
+      summary: Verify the uploaded photo and make it the pet's photo
+      description: >-
+        Checks that the pending object exists with exactly the declared size
+        and Content-Type. On success the previous photo object is deleted after
+        commit and `photo_version` changes. Returns 409 when there is no
+        pending upload, the object has not been stored yet, or a newer upload
+        request replaced this one meanwhile. The request body is ignored.
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: The pet, with a fresh `photo_url` and new `photo_version`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '400':
+          $ref: '#/components/responses/UploadInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/UploadIncomplete'
+        '503':
+          $ref: '#/components/responses/StorageUnavailable'
+  /pets/{pet_id}/photo/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+    delete:
+      tags: [Pets]
+      operationId: deletePetPhoto
+      summary: Remove the pet's profile photo
+      description: >-
+        Clears the current photo and any pending photo upload; their objects
+        are deleted after commit. Succeeds (204) when the pet has no photo.
+      x-implementation-status: implemented
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /pets/{pet_id}/records/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+    get:
+      tags: [Health records]
+      operationId: listHealthRecords
+      summary: List a pet's health records
+      description: Ordered by `date` descending, then newest first.
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: A page of records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthRecordPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Health records]
+      operationId: createHealthRecord
+      summary: Add a health record to a pet
+      description: >-
+        The pet comes from the URL; any `pet` in the body is ignored. Saving a
+        record with `next_due` does NOT create a reminder; clients may suggest
+        one and create it with POST /reminders/ (linking it with
+        `health_record`).
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthRecordWrite'
+            example:
+              name: DHPPiL booster
+              record_type: vaccination
+              date: '2026-10-19'
+              next_due: '2027-10-19'
+              clinic: Sample Veterinary Clinic
+              notes: ''
+      responses:
+        '201':
+          description: The created record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthRecord'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /pets/{pet_id}/records/{record_id}/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+      - $ref: '#/components/parameters/RecordId'
+    get:
+      tags: [Health records]
+      operationId: retrieveHealthRecord
+      summary: Get one health record
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthRecord'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Health records]
+      operationId: updateHealthRecord
+      summary: Partially update a health record
+      description: >-
+        Validation uses the merged values, so changing only `date` can fail if
+        the stored `next_due` would be earlier. A record cannot be moved to
+        another pet: any `pet` in the body is ignored. PUT is not supported
+        (405).
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthRecordWrite'
+            example:
+              notes: Mild lethargy for a day afterwards.
+      responses:
+        '200':
+          description: The updated record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthRecord'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Health records]
+      operationId: deleteHealthRecord
+      summary: Delete a health record
+      description: >-
+        Documents and reminders linked to the record are kept; their
+        `health_record` becomes null.
+      x-implementation-status: implemented
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /pets/{pet_id}/documents/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+    get:
+      tags: [Documents]
+      operationId: listDocuments
+      summary: List a pet's completed documents
+      description: >-
+        Only documents whose upload was completed (`status: ready`) are listed,
+        newest upload first. Each row carries a fresh `download_url` valid for
+        5 minutes. Pending uploads are never listed.
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Page'
+      responses:
+        '200':
+          description: A page of documents.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetDocumentPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Documents]
+      operationId: requestDocumentUpload
+      summary: Create a pending document and get a presigned upload URL
+      description: >-
+        Creates the document with `status: pending` and returns upload
+        instructions valid for 15 minutes. The document is invisible to list,
+        retrieve and update until POST .../complete/ succeeds. `filename` is
+        accepted for compatibility but is not stored and never appears in the
+        storage key. The owner's pending uploads older than one hour are
+        deleted (with their objects) whenever a new photo or document upload
+        is requested.
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadRequest'
+            example:
+              title: Annual check-up report
+              filename: report.pdf
+              content_type: application/pdf
+              size_bytes: 248213
+      responses:
+        '201':
+          description: The pending document and upload instructions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentUploadResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/StorageUnavailable'
+  /pets/{pet_id}/documents/{document_id}/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      tags: [Documents]
+      operationId: retrieveDocument
+      summary: Get one completed document with a fresh download URL
+      description: A pending document returns 404.
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: The document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetDocument'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Documents]
+      operationId: updateDocument
+      summary: Rename a completed document or change its linked record
+      description: >-
+        Only `title` and `health_record` can change; every other field in the
+        body (`pet`, `status`, `content_type`, `size_bytes`, ...) is ignored.
+        A pending document returns 404. PUT is not supported (405).
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUpdate'
+            example:
+              title: Vaccination certificate 2026
+      responses:
+        '200':
+          description: The updated document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetDocument'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Documents]
+      operationId: deleteDocument
+      summary: Delete a document (pending or completed)
+      description: >-
+        Removes the row; the stored object is deleted after commit (best
+        effort). Clients also call this to clean up after a failed upload.
+      x-implementation-status: implemented
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /pets/{pet_id}/documents/{document_id}/complete/:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      tags: [Documents]
+      operationId: completeDocumentUpload
+      summary: Verify an uploaded document and make it available
+      description: >-
+        Checks that the object exists with exactly the declared size and
+        Content-Type. On success sets `status: ready` and `uploaded_at`.
+        Idempotent: completing a ready document returns it unchanged. If the
+        object is missing (upload not finished) the document stays pending
+        (409). If it does not match, the document and its object are deleted
+        (400 `upload_invalid`). If the document was deleted while it was being
+        checked, the response is 404. The request body is ignored.
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: The completed document with a fresh `download_url`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PetDocument'
+        '400':
+          $ref: '#/components/responses/UploadInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/UploadIncomplete'
+        '503':
+          $ref: '#/components/responses/StorageUnavailable'
+  /reminders/:
+    get:
+      tags: [Reminders]
+      operationId: listReminders
+      summary: List all of the owner's reminders, including completed ones
+      description: >-
+        Ordered by `due_at`, then creation time. `is_overdue` and
+        `is_due_soon` are computed per request from Asia/Singapore calendar
+        dates. A `pet` filter for a pet the user does not own returns an empty
+        page, not 404.
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - name: pet
+          in: query
+          description: Only reminders of this pet.
+          schema:
+            type: string
+            format: uuid
+        - name: done
+          in: query
+          description: Only completed (`true`) or open (`false`) reminders.
+          schema:
+            type: string
+            enum: ['true', 'false']
+      responses:
+        '200':
+          description: A page of reminders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderPage'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+    post:
+      tags: [Reminders]
+      operationId: createReminder
+      summary: Create a reminder for one of the owner's pets
+      description: >-
+        `pet` must be one of the owner's pets and `health_record`, when given,
+        must belong to that pet; otherwise 400 `invalid` with the same message
+        DRF gives for a nonexistent id. The UI sends dates picked in a date
+        input as 09:00 Asia/Singapore.
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReminderCreate'
+            example:
+              pet: 3f1c2a9e-8d7b-4c6a-9e21-5b0f7d2c4a11
+              title: DHPPiL booster
+              due_at: '2027-10-19T09:00:00+08:00'
+              health_record: 7a0d9a51-3b2c-4f7e-8d1a-2c6e5b4a3f90
+      responses:
+        '201':
+          description: The created reminder.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /reminders/{reminder_id}/:
+    parameters:
+      - $ref: '#/components/parameters/ReminderId'
+    get:
+      tags: [Reminders]
+      operationId: retrieveReminder
+      summary: Get one reminder
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: The reminder.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Reminders]
+      operationId: updateReminder
+      summary: Edit, reschedule, complete or reopen a reminder
+      description: >-
+        Send any subset of `title`, `due_at`, `done` and `health_record`.
+        `health_record` must be a record of the reminder's pet (otherwise 400
+        `invalid` with the nonexistent-id message). Sending a `pet` different
+        from the current one is rejected (400). PUT is not supported (405).
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReminderUpdate'
+            examples:
+              complete:
+                value:
+                  done: true
+              reschedule:
+                value:
+                  title: Annual vaccination
+                  due_at: '2027-11-02T09:00:00+08:00'
+      responses:
+        '200':
+          description: The updated reminder.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reminder'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Reminders]
+      operationId: deleteReminder
+      summary: Delete a reminder
+      x-implementation-status: implemented
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    cognitoBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Cognito access token (`token_use: access`) for the PetStop SPA client.
+        ID tokens are rejected.
+    devAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      x-local-only: true
+      description: >-
+        LOCAL DEVELOPMENT ONLY; not offered by any operation's `security` and
+        not accepted by any deployed server (API Gateway's JWT authorizer
+        rejects such requests before they reach Django). `Authorization: Dev
+        <handle>` where handle is one of `alice`, `bob` (owners) or `mira`
+        (merchant), case-insensitive. Django accepts it only when it runs with
+        DJANGO_DEBUG=True and DJANGO_DEV_AUTH=true outside AWS Lambda, and only
+        for requests whose Host is localhost, 127.0.0.1 or [::1] and whose
+        peer address is loopback; otherwise the header is ignored and the
+        request is unauthenticated (401 `not_authenticated`).
+  headers:
+    NoStore:
+      description: Private data must not be cached.
+      schema:
+        type: string
+        const: no-store
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: 1-based page number; 20 items per page.
+      schema:
+        type: integer
+        minimum: 1
+    PetId:
+      name: pet_id
+      in: path
+      required: true
+      description: Pet UUID. A malformed or foreign id returns 404.
+      schema:
+        type: string
+        format: uuid
+    RecordId:
+      name: record_id
+      in: path
+      required: true
+      description: Health record UUID belonging to the pet in the path.
+      schema:
+        type: string
+        format: uuid
+    DocumentId:
+      name: document_id
+      in: path
+      required: true
+      description: Document UUID belonging to the pet in the path.
+      schema:
+        type: string
+        format: uuid
+    ReminderId:
+      name: reminder_id
+      in: path
+      required: true
+      description: Reminder UUID.
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    Species:
+      type: string
+      enum: [dog, cat, rabbit, bird, fish, other]
+    Sex:
+      type: string
+      enum: [male, female, unknown]
+    RecordType:
+      type: string
+      enum: [vaccination, deworming, grooming, checkup, other]
+    DocumentContentType:
+      type: string
+      enum: [application/pdf, image/jpeg, image/png]
+    PhotoContentType:
+      type: string
+      enum: [image/jpeg, image/png]
+    Pet:
+      type: object
+      required:
+        - id
+        - name
+        - species
+        - breed
+        - sex
+        - date_of_birth
+        - microchip_no
+        - allergies
+        - diet_notes
+        - weight_kg
+        - photo_url
+        - photo_version
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        species:
+          $ref: '#/components/schemas/Species'
+        breed:
+          type: string
+          maxLength: 80
+          description: Empty string when not recorded.
+        sex:
+          $ref: '#/components/schemas/Sex'
+        date_of_birth:
+          type: [string, 'null']
+          format: date
+        microchip_no:
+          type: [string, 'null']
+          pattern: '^[0-9]{15}$'
+          description: Exactly 15 digits, or null when not recorded.
+        allergies:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+        diet_notes:
+          type: string
+          maxLength: 500
+        weight_kg:
+          type: [number, 'null']
+          minimum: 0.01
+          maximum: 500
+          description: JSON number with at most 2 decimal places, or null.
+        photo_url:
+          type: [string, 'null']
+          format: uri
+          readOnly: true
+          description: >-
+            Presigned GET URL for the completed photo, valid for 1 hour and
+            different on every response; null when the pet has no photo or
+            storage is unavailable. Served with `Cache-Control: private,
+            no-store`.
+        photo_version:
+          type: [string, 'null']
+          readOnly: true
+          description: >-
+            Opaque identifier of the current photo. It changes only when a new
+            photo is completed and is null when the pet has no photo. Clients
+            use it as the cache key for a downloaded photo, because
+            `photo_url` changes on every response.
+          examples: [5d0c7a3e-2b4f-4f1e-9a6d-8c3b2e1f0a47]
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    PetWrite:
+      type: object
+      description: >-
+        Writable pet fields. On POST `name` and `species` are required; on
+        PATCH every field is optional. Defaults on create: breed '', sex
+        'unknown', date_of_birth null, microchip_no null, allergies [],
+        diet_notes '', weight_kg null. Strings are trimmed. `microchip_no` ''
+        is treated as null. `date_of_birth` cannot be after today
+        (Asia/Singapore). `allergies` items are trimmed and de-duplicated
+        case-insensitively, keeping the first spelling and order; at most 20
+        items of at most 50 characters (item errors are keyed by index in
+        `details.allergies`). `weight_kg` with more than 2 decimal places is
+        rejected, not rounded.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        species:
+          $ref: '#/components/schemas/Species'
+        breed:
+          type: string
+          maxLength: 80
+        sex:
+          $ref: '#/components/schemas/Sex'
+        date_of_birth:
+          type: [string, 'null']
+          format: date
+        microchip_no:
+          type: [string, 'null']
+          description: 15 digits, '' or null.
+        allergies:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+        diet_notes:
+          type: string
+          maxLength: 500
+        weight_kg:
+          type: [number, 'null']
+          minimum: 0.01
+          maximum: 500
+          multipleOf: 0.01
+    PetPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/Pet'
+    HealthRecord:
+      type: object
+      required: [id, pet, name, record_type, date, next_due, clinic, notes, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        pet:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        record_type:
+          $ref: '#/components/schemas/RecordType'
+        date:
+          type: string
+          format: date
+        next_due:
+          type: [string, 'null']
+          format: date
+        clinic:
+          type: string
+          maxLength: 100
+        notes:
+          type: string
+          maxLength: 1000
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    HealthRecordWrite:
+      type: object
+      description: >-
+        On POST `name`, `record_type` and `date` are required; on PATCH every
+        field is optional. `date` cannot be after today (Asia/Singapore).
+        `next_due`, when not null, must be on or after `date` (checked against
+        merged values on PATCH). `clinic` and `notes` default to ''. `pet` is
+        not writable; it is ignored if sent.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        record_type:
+          $ref: '#/components/schemas/RecordType'
+        date:
+          type: string
+          format: date
+        next_due:
+          type: [string, 'null']
+          format: date
+        clinic:
+          type: string
+          maxLength: 100
+        notes:
+          type: string
+          maxLength: 1000
+    HealthRecordPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/HealthRecord'
+    PetDocument:
+      type: object
+      required:
+        - id
+        - pet
+        - health_record
+        - title
+        - content_type
+        - size_bytes
+        - status
+        - uploaded_at
+        - created_at
+        - download_url
+      properties:
+        id:
+          type: string
+          format: uuid
+        pet:
+          type: string
+          format: uuid
+        health_record:
+          type: [string, 'null']
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        content_type:
+          $ref: '#/components/schemas/DocumentContentType'
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+        status:
+          type: string
+          enum: [pending, ready]
+          description: Only `ready` documents are listed or retrievable.
+        uploaded_at:
+          type: [string, 'null']
+          format: date-time
+          description: When the upload was completed; null while pending.
+        created_at:
+          type: string
+          format: date-time
+        download_url:
+          type: [string, 'null']
+          format: uri
+          description: >-
+            Presigned GET URL valid for 5 minutes (response Content-Type is the
+            document's type, Content-Disposition attachment with a generic file
+            name, Cache-Control private, no-store). Null while pending or when
+            storage is unavailable.
+    PetDocumentPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/PetDocument'
+    DocumentUploadRequest:
+      type: object
+      required: [title, content_type, size_bytes]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        filename:
+          type: string
+          maxLength: 255
+          description: Accepted and ignored; never stored or used in the key.
+        content_type:
+          $ref: '#/components/schemas/DocumentContentType'
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+        health_record:
+          type: [string, 'null']
+          format: uuid
+          description: Optional record of the same pet.
+    DocumentUploadResponse:
+      type: object
+      required: [document, upload_url, upload_headers]
+      properties:
+        document:
+          $ref: '#/components/schemas/PetDocument'
+        upload_url:
+          type: string
+          format: uri
+          description: >-
+            Presigned PUT URL valid for 15 minutes, signed for the exact
+            Content-Type and Content-Length declared in the request.
+        upload_headers:
+          $ref: '#/components/schemas/UploadHeaders'
+      example:
+        document:
+          id: 0b8f6c2e-1d4a-4e8b-9c3f-6a2d1e5b7c90
+          pet: 3f1c2a9e-8d7b-4c6a-9e21-5b0f7d2c4a11
+          health_record: null
+          title: Annual check-up report
+          content_type: application/pdf
+          size_bytes: 248213
+          status: pending
+          uploaded_at: null
+          created_at: '2026-10-30T10:20:00.000000+08:00'
+          download_url: null
+        upload_url: https://petfiles-bucket.s3.ap-southeast-1.amazonaws.com/pets/3f1c2a9e-8d7b-4c6a-9e21-5b0f7d2c4a11/documents/0b8f6c2e-1d4a-4e8b-9c3f-6a2d1e5b7c90.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost&...
+        upload_headers:
+          Content-Type: application/pdf
+    DocumentUpdate:
+      type: object
+      description: Only these fields are writable; anything else is ignored.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        health_record:
+          type: [string, 'null']
+          format: uuid
+          description: A record of the same pet, or null to unlink.
+    PhotoUploadRequest:
+      type: object
+      required: [content_type, size_bytes]
+      properties:
+        content_type:
+          $ref: '#/components/schemas/PhotoContentType'
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+    UploadHeaders:
+      type: object
+      required: [Content-Type]
+      description: >-
+        The only header the client sends with the PUT. The browser sets
+        Content-Length itself; it must equal the declared size_bytes.
+      properties:
+        Content-Type:
+          type: string
+    UploadTicket:
+      type: object
+      required: [upload_url, upload_headers]
+      properties:
+        upload_url:
+          type: string
+          format: uri
+          description: Presigned PUT URL valid for 15 minutes.
+        upload_headers:
+          $ref: '#/components/schemas/UploadHeaders'
+    Reminder:
+      type: object
+      required:
+        - id
+        - pet
+        - health_record
+        - title
+        - due_at
+        - done
+        - is_overdue
+        - is_due_soon
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        pet:
+          type: string
+          format: uuid
+        health_record:
+          type: [string, 'null']
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        due_at:
+          type: string
+          format: date-time
+          description: Rendered with the +08:00 offset; the first 10 characters are the Singapore due date.
+        done:
+          type: boolean
+        is_overdue:
+          type: boolean
+          description: Not done and the Singapore due date is before today (Singapore).
+        is_due_soon:
+          type: boolean
+          description: Not done and today <= Singapore due date <= today + 7 days.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ReminderCreate:
+      type: object
+      required: [pet, title, due_at]
+      properties:
+        pet:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        due_at:
+          type: string
+          format: date-time
+          description: A naive value is interpreted as Asia/Singapore time.
+        done:
+          type: boolean
+          default: false
+        health_record:
+          type: [string, 'null']
+          format: uuid
+    ReminderUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        due_at:
+          type: string
+          format: date-time
+        done:
+          type: boolean
+        health_record:
+          type: [string, 'null']
+          format: uuid
+          description: A record of the reminder's pet, or null to unlink.
+    ReminderPage:
+      allOf:
+        - $ref: '#/components/schemas/PageEnvelope'
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/Reminder'
+    PageEnvelope:
+      type: object
+      required: [count, next, previous, results]
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        next:
+          type: [string, 'null']
+          format: uri
+        previous:
+          type: [string, 'null']
+          format: uri
+        results:
+          type: array
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+  examples:
+    PetKopi:
+      value:
+        id: 3f1c2a9e-8d7b-4c6a-9e21-5b0f7d2c4a11
+        name: Kopi
+        species: dog
+        breed: Singapore Special
+        sex: male
+        date_of_birth: '2022-04-12'
+        microchip_no: '702000000000011'
+        allergies: [Chicken]
+        diet_notes: Salmon-based dry food
+        weight_kg: 14.2
+        photo_url: null
+        photo_version: null
+        created_at: '2026-10-30T10:15:00.123456+08:00'
+        updated_at: '2026-10-30T10:15:00.123456+08:00'
+  responses:
+    Unauthenticated:
+      description: >-
+        Missing credentials (`not_authenticated`) or an invalid token
+        (`authentication_failed`).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: not_authenticated
+              message: Authentication credentials were not provided.
+              details: {}
+    NotFound:
+      description: >-
+        The object does not exist, belongs to another owner, is a pending
+        document on a read/update route, or the id is malformed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: not_found
+              message: Not found.
+              details: {}
+    InvalidRequest:
+      description: >-
+        Validation failed. `details` maps field names to lists of messages;
+        errors inside a list field are an object keyed by item index. Foreign
+        ids in the body produce the same message as nonexistent ids. A write
+        that collided with a concurrent change has
+        `details.non_field_errors: ["This item changed. Refresh and try
+        again."]`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            field:
+              value:
+                error:
+                  code: invalid
+                  message: Some fields are invalid.
+                  details:
+                    microchip_no: [Enter exactly 15 digits, or leave it blank.]
+            listItem:
+              value:
+                error:
+                  code: invalid
+                  message: Some fields are invalid.
+                  details:
+                    allergies:
+                      '3': [Ensure this field has no more than 50 characters.]
+            conflict:
+              value:
+                error:
+                  code: invalid
+                  message: Some fields are invalid.
+                  details:
+                    non_field_errors: [This item changed. Refresh and try again.]
+    UploadIncomplete:
+      description: >-
+        No pending upload exists, the uploaded object was not found in
+        storage, or (photos) a newer upload request replaced this one. The
+        pending document or photo is kept, so the client may retry the PUT or
+        delete the document.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: upload_incomplete
+              message: The file has not finished uploading. Try again.
+              details: {}
+    UploadInvalid:
+      description: >-
+        Validation failed (`invalid`), or the stored object did not match the
+        declared size or Content-Type (`upload_invalid`); in the second case
+        the pending document or photo and its object were deleted.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: upload_invalid
+              message: The uploaded file does not match the declared type or size. Upload it again.
+              details: {}
+    StorageUnavailable:
+      description: File storage is not configured or did not respond.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            error:
+              code: storage_unavailable
+              message: File storage is unavailable. Please try again later.
+              details: {}

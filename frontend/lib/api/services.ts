@@ -1,15 +1,48 @@
 import { localUI } from "../data-source.ts";
+import { documentProblem, photoProblem } from "../pet-input.ts";
 import { localServices } from "./local-services.ts";
-import { api, transferPrivateFile, createApiClient } from "./client.ts";
+import {
+  api,
+  ApiError,
+  transferPrivateFile,
+  createApiClient,
+} from "./client.ts";
 import * as map from "./adapters.ts";
 import type {
   Category,
+  DocumentUpdate,
+  HealthRecord,
   Merchant,
   NewPetInput,
+  Pet,
+  PetDocument,
+  PetInput,
+  RecordInput,
+  ReminderUpdate,
   ShippingInput,
 } from "./types.ts";
 const id = (value: string) => encodeURIComponent(value);
 const privateRequest = { auth: true };
+const STORAGE_UNAVAILABLE =
+  "File storage is unavailable right now. Please try again later.";
+const isStorageUnavailable = (error: unknown) =>
+  error instanceof ApiError && error.code === "storage_unavailable";
+// 5xx messages are masked by the client, but the error code survives.
+const storageError = (error: unknown) =>
+  isStorageUnavailable(error) ? new Error(STORAGE_UNAVAILABLE) : error;
+const EXTENSIONS: Record<string, string[]> = {
+  "application/pdf": [".pdf"],
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+};
+function downloadName(title: string, contentType: string) {
+  const extensions = EXTENSIONS[contentType];
+  if (!extensions) return title;
+  const lower = title.toLowerCase();
+  return extensions.some((ext) => lower.endsWith(ext))
+    ? title
+    : title + extensions[0];
+}
 export function createServices(client: ReturnType<typeof createApiClient>) {
   const service = {
     async catalogue() {
@@ -32,20 +65,20 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
     async me() {
       return map.profile(await client.request("me/", privateRequest));
     },
-    async pets() {
+    async pets(): Promise<Pet[]> {
       const pets = (await client.list("pets/", privateRequest)).map((v) =>
         map.pet(v),
       );
       return Promise.all(
-        pets.map(async (p) => ({
-          ...p,
-          records: (
-            await client.list(`pets/${id(p.id)}/records/`, privateRequest)
-          ).map(map.healthRecord),
-        })),
+        pets.map(async (p) => ({ ...p, records: await service.records(p.id) })),
       );
     },
-    async createPet(input: NewPetInput) {
+    async records(petId: string): Promise<HealthRecord[]> {
+      return (
+        await client.list(`pets/${id(petId)}/records/`, privateRequest)
+      ).map(map.healthRecord);
+    },
+    async createPet(input: NewPetInput): Promise<Pet> {
       return map.pet(
         await client.request("pets/", {
           ...privateRequest,
@@ -54,16 +87,66 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
         }),
       );
     },
-    async addRecord(
-      petId: string,
-      input: {
-        name: string;
-        record_type: string;
-        date: string;
-        next_due: string | null;
-        clinic: string;
-      },
-    ) {
+    /** The returned pet has no records; callers keep their own. */
+    async updatePet(petId: string, input: Partial<PetInput>): Promise<Pet> {
+      return map.pet(
+        await client.request(`pets/${id(petId)}/`, {
+          ...privateRequest,
+          method: "PATCH",
+          json: input,
+        }),
+      );
+    },
+    async deletePet(petId: string): Promise<void> {
+      await client.request(`pets/${id(petId)}/`, {
+        ...privateRequest,
+        method: "DELETE",
+      });
+    },
+    async uploadPetPhoto(petId: string, file: File): Promise<Pet> {
+      const problem = photoProblem(file);
+      if (problem) throw new Error(problem);
+      let ticket: map.Row;
+      try {
+        ticket = map.object(
+          await client.request(`pets/${id(petId)}/photo-upload/`, {
+            ...privateRequest,
+            method: "POST",
+            json: { content_type: file.type, size_bytes: file.size },
+          }),
+        );
+      } catch (error) {
+        throw storageError(error);
+      }
+      if (typeof ticket.upload_url !== "string")
+        throw new Error("The upload could not be prepared.");
+      // No cleanup on failure: the next upload request replaces the pending
+      // upload, and stale pending uploads are purged by the server.
+      await transferPrivateFile(ticket.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      let row: unknown;
+      try {
+        row = await client.request(`pets/${id(petId)}/photo-upload/complete/`, {
+          ...privateRequest,
+          method: "POST",
+        });
+      } catch (error) {
+        throw isStorageUnavailable(error)
+          ? new Error(STORAGE_UNAVAILABLE)
+          : new Error("The photo could not be verified. Please try again.");
+      }
+      return map.pet(row);
+    },
+    async removePetPhoto(petId: string): Promise<void> {
+      await client.request(`pets/${id(petId)}/photo/`, {
+        ...privateRequest,
+        method: "DELETE",
+      });
+    },
+    async addRecord(petId: string, input: RecordInput): Promise<HealthRecord> {
       return map.healthRecord(
         await client.request(`pets/${id(petId)}/records/`, {
           ...privateRequest,
@@ -71,6 +154,25 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
           json: input,
         }),
       );
+    },
+    async updateRecord(
+      petId: string,
+      recordId: string,
+      input: Partial<RecordInput>,
+    ): Promise<HealthRecord> {
+      return map.healthRecord(
+        await client.request(`pets/${id(petId)}/records/${id(recordId)}/`, {
+          ...privateRequest,
+          method: "PATCH",
+          json: input,
+        }),
+      );
+    },
+    async deleteRecord(petId: string, recordId: string): Promise<void> {
+      await client.request(`pets/${id(petId)}/records/${id(recordId)}/`, {
+        ...privateRequest,
+        method: "DELETE",
+      });
     },
     async reminders() {
       return (await client.list("reminders/", privateRequest)).map(
@@ -96,6 +198,22 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
         ...privateRequest,
         method: "PATCH",
         json: { done },
+      });
+    },
+    async updateReminder(
+      reminderId: string,
+      input: ReminderUpdate,
+    ): Promise<void> {
+      await client.request(`reminders/${id(reminderId)}/`, {
+        ...privateRequest,
+        method: "PATCH",
+        json: input,
+      });
+    },
+    async deleteReminder(reminderId: string): Promise<void> {
+      await client.request(`reminders/${id(reminderId)}/`, {
+        ...privateRequest,
+        method: "DELETE",
       });
     },
     async product(
@@ -178,33 +296,48 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
         json: { status },
       });
     },
-    async documents(petId: string) {
+    async documents(petId: string): Promise<PetDocument[]> {
       return (
         await client.list(`pets/${id(petId)}/documents/`, privateRequest)
       ).map(map.document);
     },
-    async uploadDocument(petId: string, file: File, title: string) {
-      if (
-        !["application/pdf", "image/jpeg", "image/png"].includes(file.type) ||
-        file.size < 1 ||
-        file.size > 10 * 1024 * 1024
-      )
-        throw new Error("Choose a PDF, JPEG or PNG file up to 10 MB.");
-      const response = map.object(
-        await client.request(`pets/${id(petId)}/documents/`, {
-          ...privateRequest,
-          method: "POST",
-          json: {
-            title,
-            filename: file.name,
-            content_type: file.type,
-            size_bytes: file.size,
-          },
-        }),
-      );
+    async uploadDocument(
+      petId: string,
+      file: File,
+      title: string,
+      healthRecordId?: string,
+    ): Promise<void> {
+      const problem = documentProblem(file);
+      if (problem) throw new Error(problem);
+      let response: map.Row;
+      try {
+        response = map.object(
+          await client.request(`pets/${id(petId)}/documents/`, {
+            ...privateRequest,
+            method: "POST",
+            json: {
+              title,
+              filename: file.name,
+              content_type: file.type,
+              size_bytes: file.size,
+              ...(healthRecordId ? { health_record: healthRecordId } : {}),
+            },
+          }),
+        );
+      } catch (error) {
+        throw storageError(error);
+      }
       const doc = map.document(response.document);
-      if (typeof response.upload_url !== "string")
+      const path = `pets/${id(petId)}/documents/${id(doc.id)}/`;
+      // Best effort: a pending document that never completes is purged later.
+      const discard = () =>
+        client
+          .request(path, { ...privateRequest, method: "DELETE" })
+          .catch(() => {});
+      if (typeof response.upload_url !== "string") {
+        await discard();
         throw new Error("The upload could not be prepared.");
+      }
       try {
         await transferPrivateFile(response.upload_url, {
           method: "PUT",
@@ -212,24 +345,57 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
           body: file,
         });
       } catch (error) {
-        await client
-          .request(`pets/${id(petId)}/documents/${id(doc.id)}/`, {
-            ...privateRequest,
-            method: "DELETE",
-          })
-          .catch(() => {});
+        await discard();
         throw error;
       }
+      try {
+        await client.request(`${path}complete/`, {
+          ...privateRequest,
+          method: "POST",
+        });
+      } catch (error) {
+        await discard();
+        throw isStorageUnavailable(error)
+          ? new Error(STORAGE_UNAVAILABLE)
+          : new Error("The upload could not be verified. Please try again.");
+      }
+    },
+    async updateDocument(
+      petId: string,
+      documentId: string,
+      input: DocumentUpdate,
+    ): Promise<PetDocument> {
+      return map.document(
+        await client.request(`pets/${id(petId)}/documents/${id(documentId)}/`, {
+          ...privateRequest,
+          method: "PATCH",
+          json: input,
+        }),
+      );
+    },
+    async deleteDocument(petId: string, documentId: string): Promise<void> {
+      await client.request(`pets/${id(petId)}/documents/${id(documentId)}/`, {
+        ...privateRequest,
+        method: "DELETE",
+      });
     },
     async downloadDocument(
       petId: string,
       documentId: string,
     ): Promise<{ blob: Blob; name: string }> {
-      const docs = await service.documents(petId);
-      const doc = docs.find((d) => d.id === documentId);
-      if (!doc) throw new Error("This document is no longer available.");
+      const doc = map.document(
+        await client.request(
+          `pets/${id(petId)}/documents/${id(documentId)}/`,
+          privateRequest,
+        ),
+      );
+      if (!doc.download_url)
+        throw new Error("This document is not available right now.");
       const response = await transferPrivateFile(doc.download_url);
-      return { blob: await response.blob(), name: doc.title };
+      return {
+        blob: await response.blob(),
+        name: downloadName(doc.title, doc.content_type),
+      };
     },
   };
   return service;

@@ -1,15 +1,66 @@
 import type { createServices } from "./services.ts";
-import type { AppState, Order, PetDocument, Product } from "./types.ts";
+import type {
+  AppState,
+  HealthRecord,
+  Order,
+  Pet,
+  PetDocument,
+  PetInput,
+  Product,
+  RecordInput,
+  Reminder,
+} from "./types.ts";
 import { emptyState } from "./types.ts";
+import { petView, recordView } from "./adapters.ts";
+import { reminderStatus } from "../reminders.ts";
+import { documentProblem, photoProblem } from "../pet-input.ts";
 
 type Store = AppState & { checkoutKeys: Record<string, string> };
-const storageKey = "petstop.ui.v1";
+// v2: pets carry raw `values` for the edit form; v1 sample data is discarded.
+const storageKey = "petstop.ui.v2";
 let memory: Store | null = null;
+// Documents and photos stay in memory only (lost on reload).
 const files = new Map<
   string,
   { pet: string; document: PetDocument; file: File }
 >();
+const photos = new Map<string, { file: File; url: string; version: string }>();
 const uid = () => crypto.randomUUID();
+const noPhoto = { photo_url: null, photo_version: null };
+function withStatus(reminder: Omit<Reminder, "is_overdue" | "is_due_soon">) {
+  return {
+    ...reminder,
+    health_record_id: reminder.health_record_id ?? "",
+    ...reminderStatus(reminder.due_date, reminder.done),
+  };
+}
+function withPhoto(pet: Pet): Pet {
+  const photo = photos.get(pet.id);
+  return photo
+    ? { ...pet, photo_url: photo.url, photo_version: photo.version }
+    : pet;
+}
+function dropPhoto(petId: string) {
+  const photo = photos.get(petId);
+  if (photo) URL.revokeObjectURL(photo.url);
+  photos.delete(petId);
+}
+function recordInput(record: HealthRecord): RecordInput {
+  return {
+    name: record.title,
+    record_type: record.record_type,
+    date: record.date,
+    next_due: record.next_due || null,
+    clinic: record.clinic,
+    notes: record.notes,
+  };
+}
+// Drops keys explicitly set to undefined, so they do not erase stored values.
+function defined<T extends object>(input: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
 export function seedLocalState(): Store {
   const merchants = [
     "The Happy Tail",
@@ -169,73 +220,81 @@ export function seedLocalState(): Store {
     products,
     facilities,
     pets: [
-      {
-        id: "kopi",
-        name: "Kopi",
-        species: "dog",
-        breed: "Singapore Special",
-        sex: "male",
-        date_of_birth: "2022-04-12",
-        microchip: "",
-        photo_url: null,
-        weight: "",
-        allergies: "Chicken",
-        diet: "Salmon-based dry food",
-        records: [
-          {
-            id: "r1",
-            title: "Annual vaccination",
-            kind: "vaccination",
-            date: "2026-06-12",
-            next_due: "2027-06-12",
-            clinic: "Sample veterinary centre",
-          },
-        ],
-      },
-      {
-        id: "mochi",
-        name: "Mochi",
-        species: "cat",
-        breed: "Domestic Shorthair",
-        sex: "female",
-        date_of_birth: "2023-08-20",
-        microchip: "",
-        photo_url: null,
-        weight: "",
-        allergies: "None recorded",
-        diet: "Indoor cat food",
-        records: [],
-      },
-      {
-        id: "sesame",
-        name: "Sesame",
-        species: "rabbit",
-        breed: "Holland Lop",
-        sex: "female",
-        date_of_birth: "2024-02-15",
-        microchip: "",
-        photo_url: null,
-        weight: "",
-        allergies: "None recorded",
-        diet: "Timothy hay and leafy greens",
-        records: [],
-      },
+      petView(
+        "kopi",
+        {
+          name: "Kopi",
+          species: "dog",
+          breed: "Singapore Special",
+          sex: "male",
+          date_of_birth: "2022-04-12",
+          microchip_no: null,
+          allergies: ["Chicken"],
+          diet_notes: "Salmon-based dry food",
+          weight_kg: 14.2,
+        },
+        {
+          ...noPhoto,
+          records: [
+            recordView("r1", {
+              name: "Annual vaccination",
+              record_type: "vaccination",
+              date: "2026-06-12",
+              next_due: "2027-06-12",
+              clinic: "Sample veterinary centre",
+              notes: "",
+            }),
+          ],
+        },
+      ),
+      petView(
+        "mochi",
+        {
+          name: "Mochi",
+          species: "cat",
+          breed: "Domestic Shorthair",
+          sex: "female",
+          date_of_birth: "2023-08-20",
+          microchip_no: null,
+          allergies: [],
+          diet_notes: "Indoor cat food",
+          weight_kg: null,
+        },
+        { ...noPhoto, records: [] },
+      ),
+      petView(
+        "sesame",
+        {
+          name: "Sesame",
+          species: "rabbit",
+          breed: "Holland Lop",
+          sex: "female",
+          date_of_birth: "2024-02-15",
+          microchip_no: null,
+          allergies: [],
+          diet_notes: "Timothy hay and leafy greens",
+          weight_kg: null,
+        },
+        { ...noPhoto, records: [] },
+      ),
     ],
     reminders: [
-      {
+      withStatus({
         id: "rem1",
         pet_id: "kopi",
         title: "Monthly flea & tick care",
         due_date: "2026-10-25",
         done: false,
-      },
-      {
+        health_record_id: "",
+      }),
+      withStatus({
         id: "rem2",
         pet_id: "mochi",
         title: "Annual health check",
         due_date: "2026-11-05",
         done: false,
-      },
+        health_record_id: "",
+      }),
     ],
     checkoutKeys: {},
   };
@@ -250,6 +309,8 @@ function read(): Store {
         if (
           Array.isArray(parsed.products) &&
           Array.isArray(parsed.pets) &&
+          parsed.pets.every((p) => p?.values) &&
+          Array.isArray(parsed.reminders) &&
           parsed.checkoutKeys &&
           parsed.profile?.id === "local-owner"
         )
@@ -314,50 +375,101 @@ export const localServices: ReturnType<typeof createServices> = {
     return copy(required(read().profile ?? undefined));
   },
   async pets() {
-    return copy(read().pets);
+    return copy(read().pets).map(withPhoto);
+  },
+  async records(pet) {
+    return copy(required(read().pets.find((p) => p.id === pet)).records);
   },
   async createPet(input) {
     if (!input.name.trim()) throw new Error("Enter your pet’s name.");
-    const pet = {
-      ...input,
-      id: uid(),
-      microchip: input.microchip_no || "",
-      allergies: input.allergies.join(", "),
-      diet: input.diet_notes,
-      records: [],
-      photo_url: null,
-      weight: "",
-    };
+    const pet = petView(uid(), copy(input), { ...noPhoto, records: [] });
     write((s) => {
       s.pets.push(pet);
     });
     return copy(pet);
   },
+  async updatePet(id, input) {
+    if (input.name !== undefined && !input.name.trim())
+      throw new Error("Enter your pet’s name.");
+    let pet!: Pet;
+    write((s) => {
+      const index = s.pets.findIndex((p) => p.id === id);
+      const current = required(s.pets[index]);
+      const values: PetInput = { ...current.values, ...copy(defined(input)) };
+      pet = petView(id, values, { ...noPhoto, records: current.records });
+      s.pets[index] = pet;
+    });
+    return withPhoto(copy(pet));
+  },
+  async deletePet(id) {
+    write((s) => {
+      required(s.pets.find((p) => p.id === id));
+      s.pets = s.pets.filter((p) => p.id !== id);
+      s.reminders = s.reminders.filter((r) => r.pet_id !== id);
+    });
+    for (const [key, entry] of files) if (entry.pet === id) files.delete(key);
+    dropPhoto(id);
+  },
+  async uploadPetPhoto(id, file) {
+    const problem = photoProblem(file);
+    if (problem) throw new Error(problem);
+    const pet = required(read().pets.find((p) => p.id === id));
+    dropPhoto(id);
+    photos.set(id, { file, url: URL.createObjectURL(file), version: uid() });
+    return withPhoto(copy(pet));
+  },
+  async removePetPhoto(id) {
+    required(read().pets.find((p) => p.id === id));
+    dropPhoto(id);
+  },
   async addRecord(pet, input) {
-    const record = {
-      id: uid(),
-      title: input.name,
-      kind: input.record_type,
-      date: input.date,
-      next_due: input.next_due || "",
-      clinic: input.clinic,
-    };
+    if (!input.name.trim()) throw new Error("Enter a record name.");
+    const record = recordView(uid(), input);
     write((s) => {
       required(s.pets.find((p) => p.id === pet)).records.push(record);
     });
     return copy(record);
   },
+  async updateRecord(pet, id, input) {
+    if (input.name !== undefined && !input.name.trim())
+      throw new Error("Enter a record name.");
+    let record!: HealthRecord;
+    write((s) => {
+      const records = required(s.pets.find((p) => p.id === pet)).records;
+      const index = records.findIndex((r) => r.id === id);
+      const merged = { ...recordInput(required(records[index])), ...input };
+      if (merged.next_due && merged.next_due < merged.date)
+        throw new Error("Next due date cannot be before the date of care.");
+      record = recordView(id, merged);
+      records[index] = record;
+    });
+    return copy(record);
+  },
+  async deleteRecord(pet, id) {
+    write((s) => {
+      const p = required(s.pets.find((p) => p.id === pet));
+      required(p.records.find((r) => r.id === id));
+      p.records = p.records.filter((r) => r.id !== id);
+      for (const r of s.reminders)
+        if (r.health_record_id === id) r.health_record_id = "";
+    });
+    for (const entry of files.values())
+      if (entry.document.health_record_id === id)
+        entry.document.health_record_id = "";
+  },
   async reminders() {
-    return copy(read().reminders);
+    return copy(read().reminders).map(withStatus);
   },
   async createReminder(input) {
-    const reminder = {
+    if (!input.title.trim()) throw new Error("Enter a reminder name.");
+    const reminder = withStatus({
       id: uid(),
       pet_id: input.pet,
       title: input.title,
       due_date: input.due_at.slice(0, 10),
       done: false,
-    };
+      health_record_id: input.health_record ?? "",
+    });
     write((s) => {
       required(s.pets.find((p) => p.id === input.pet));
       s.reminders.push(reminder);
@@ -367,6 +479,24 @@ export const localServices: ReturnType<typeof createServices> = {
   async setReminder(id, done) {
     write((s) => {
       required(s.reminders.find((r) => r.id === id)).done = done;
+    });
+  },
+  async updateReminder(id, input) {
+    if (input.title !== undefined && !input.title.trim())
+      throw new Error("Enter a reminder name.");
+    write((s) => {
+      const r = required(s.reminders.find((r) => r.id === id));
+      if (input.title !== undefined) r.title = input.title;
+      if (input.due_at !== undefined) r.due_date = input.due_at.slice(0, 10);
+      if (input.done !== undefined) r.done = input.done;
+      if (input.health_record !== undefined)
+        r.health_record_id = input.health_record ?? "";
+    });
+  },
+  async deleteReminder(id) {
+    write((s) => {
+      required(s.reminders.find((r) => r.id === id));
+      s.reminders = s.reminders.filter((r) => r.id !== id);
     });
   },
   async product(id) {
@@ -497,13 +627,9 @@ export const localServices: ReturnType<typeof createServices> = {
       .filter((f) => f.pet === pet)
       .map((f) => copy(f.document));
   },
-  async uploadDocument(pet, file, title) {
-    if (
-      !["application/pdf", "image/jpeg", "image/png"].includes(file.type) ||
-      file.size < 1 ||
-      file.size > 10 * 1024 * 1024
-    )
-      throw new Error("Choose a PDF, JPEG or PNG file up to 10 MB.");
+  async uploadDocument(pet, file, title, healthRecordId) {
+    const problem = documentProblem(file);
+    if (problem) throw new Error(problem);
     required(read().pets.find((p) => p.id === pet));
     const id = uid();
     files.set(id, {
@@ -516,8 +642,27 @@ export const localServices: ReturnType<typeof createServices> = {
         size_bytes: file.size,
         uploaded_at: new Date().toISOString(),
         download_url: "",
+        health_record_id: healthRecordId ?? "",
       },
     });
+  },
+  async updateDocument(pet, id, input) {
+    const entry = files.get(id);
+    if (!entry || entry.pet !== pet)
+      throw new Error("This document could not be found.");
+    if (input.title !== undefined) {
+      if (!input.title.trim()) throw new Error("Enter a document title.");
+      entry.document.title = input.title;
+    }
+    if (input.health_record !== undefined)
+      entry.document.health_record_id = input.health_record ?? "";
+    return copy(entry.document);
+  },
+  async deleteDocument(pet, id) {
+    const entry = files.get(id);
+    if (!entry || entry.pet !== pet)
+      throw new Error("This document could not be found.");
+    files.delete(id);
   },
   async downloadDocument(pet, id) {
     const entry = required(files.get(id));

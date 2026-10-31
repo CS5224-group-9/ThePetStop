@@ -9,7 +9,7 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --experimental-strip-types --test tests/api.test.mts tests/local-ui.test.mts",
+    "test": "node --experimental-strip-types --test tests/api.test.mts tests/local-ui.test.mts tests/pets-api.test.mts tests/pets-local.test.mts",
     "predev": "node scripts/prepare-maplibre-worker.mjs",
     "prebuild": "node scripts/prepare-maplibre-worker.mjs"
   },
