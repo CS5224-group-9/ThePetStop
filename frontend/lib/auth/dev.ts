@@ -2,6 +2,7 @@
 // It is honoured only when NEXT_PUBLIC_DEV_AUTH=true, in API mode, on
 // localhost/127.0.0.1; the backend independently requires DEBUG, its own
 // opt-in and a loopback client. Never touch the browser at module top level.
+import { useSyncExternalStore } from "react";
 import { ApiError } from "../api/client.ts";
 
 export const DEV_USERS = [
@@ -45,6 +46,16 @@ export function devAuthEnabled(): boolean {
     API_MODE,
     typeof window === "undefined" ? undefined : window.location.hostname,
   );
+}
+
+const noSubscribe = () => () => {};
+// The server cannot see the hostname. A build with dev sign-in renders "unknown"
+// there and while hydrating; a build without it is false everywhere.
+const serverSnapshot = () => (FLAG && API_MODE ? null : false);
+
+/** devAuthEnabled() for render code: null until hydrated, so markup matches. */
+export function useDevAuthEnabled(): boolean | null {
+  return useSyncExternalStore(noSubscribe, devAuthEnabled, serverSnapshot);
 }
 
 const key = "petstop.dev-user";

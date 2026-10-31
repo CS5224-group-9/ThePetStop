@@ -1,10 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { ApiError, createApiClient } from "../lib/api/client.ts";
 import { createServices } from "../lib/api/services.ts";
 import { pet, reminder } from "../lib/api/adapters.ts";
 import { createPhotoCache } from "../lib/api/photo-cache.ts";
-import { devSignInError, isDevAuthAllowed } from "../lib/auth/dev.ts";
+import {
+  devSignInError,
+  isDevAuthAllowed,
+  useDevAuthEnabled,
+} from "../lib/auth/dev.ts";
 import { formError } from "../lib/form-error.ts";
 import { addDays } from "../lib/reminders.ts";
 import { todaySG } from "../lib/format.ts";
@@ -649,6 +655,34 @@ test("isDevAuthAllowed requires the flag, API mode and a loopback hostname", () 
   assert.equal(isDevAuthAllowed(true, true, "example.com"), false);
   assert.equal(isDevAuthAllowed(true, true, "localhost.example.com"), false);
   assert.equal(isDevAuthAllowed(true, true, undefined), false);
+});
+
+test("useDevAuthEnabled renders a hostname-free value on the server", async () => {
+  const render = (hook: () => boolean | null) =>
+    renderToStaticMarkup(createElement(() => String(hook())));
+  // This process has no NEXT_PUBLIC_DEV_AUTH, like every deployed build.
+  assert.equal(render(useDevAuthEnabled), "false");
+  const saved = {
+    flag: process.env.NEXT_PUBLIC_DEV_AUTH,
+    source: process.env.NEXT_PUBLIC_DATA_SOURCE,
+  };
+  process.env.NEXT_PUBLIC_DEV_AUTH = "true";
+  process.env.NEXT_PUBLIC_DATA_SOURCE = "api";
+  try {
+    // A fresh module instance reads the flags at load, as a dev build does.
+    const built: typeof import("../lib/auth/dev.ts") = await import(
+      new URL("../lib/auth/dev.ts?dev-build", import.meta.url).href
+    );
+    // Unknown until hydrated, so server and first client render agree.
+    assert.equal(render(built.useDevAuthEnabled), "null");
+  } finally {
+    for (const [name, value] of [
+      ["NEXT_PUBLIC_DEV_AUTH", saved.flag],
+      ["NEXT_PUBLIC_DATA_SOURCE", saved.source],
+    ] as const)
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+  }
 });
 
 test("devSignInError explains rejected and unreachable development sign-ins", () => {

@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useApp } from "./app-provider";
 import { Icon } from "./ui";
 import { nextPath } from "@/lib/format";
-import { devAuthEnabled } from "@/lib/auth/dev";
+import { useDevAuthEnabled } from "@/lib/auth/dev";
 
 const navigation = [
   { href: "/", label: "Overview", mobile: "Home", icon: "grid" },
@@ -23,6 +23,7 @@ const navigation = [
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const { state, notice, signOut, notify } = useApp();
+  const devAuth = useDevAuthEnabled();
   const active =
     path.startsWith("/cart") || path.startsWith("/checkout") ? "/shop/" : path;
   const count = state.cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -79,7 +80,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   <span>
                     {state.profile?.display_name || "Account"}
                     <small>
-                      {devAuthEnabled()
+                      {devAuth
                         ? `Dev sign-in · ${state.role === "merchant" ? "Merchant" : "Pet owner"}`
                         : localUI
                           ? "Local workspace"

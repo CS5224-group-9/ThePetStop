@@ -6,7 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "./app-provider";
 import { Icon } from "./ui";
 import { authConfigured, finishSignIn, signIn } from "@/lib/auth/cognito";
-import { DEV_USERS, devAuthEnabled, devHandle } from "@/lib/auth/dev";
+import {
+  DEV_USERS,
+  devAuthEnabled,
+  devHandle,
+  useDevAuthEnabled,
+} from "@/lib/auth/dev";
 import { nextPath } from "@/lib/format";
 import { FormError } from "./resource-state";
 function LoginStory() {
@@ -33,6 +38,7 @@ export function Login() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const devAuth = useDevAuthEnabled();
   if (localUI)
     return (
       <div className="auth-card">
@@ -48,8 +54,18 @@ export function Login() {
         </Link>
       </div>
     );
-  if (devAuthEnabled()) {
-    // LOCAL DEVELOPMENT ONLY: devAuthEnabled() needs NEXT_PUBLIC_DEV_AUTH=true,
+  if (devAuth === null)
+    // Dev sign-in is built in, but the hostname is unknown until hydration.
+    return (
+      <div className="login-layout">
+        <LoginStory />
+        <section className="login-form">
+          <p role="status">Loading sign-in…</p>
+        </section>
+      </div>
+    );
+  if (devAuth) {
+    // LOCAL DEVELOPMENT ONLY: devAuth needs NEXT_PUBLIC_DEV_AUTH=true,
     // API mode and a localhost/127.0.0.1 hostname.
     const current = state.role ? devHandle() : null;
     return (
