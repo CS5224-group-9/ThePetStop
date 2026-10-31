@@ -105,8 +105,9 @@ handlers, PostgreSQL history, snapshot review and deterministic Floci checks.
 The optional `PetStop-Dev-FacilityIngestion` CDK stack keeps schedules disabled.
 Only its loader enters the existing VPC; other workers retain internet access.
 See [the operations runbook](facility-ingestion-operations.md) for the current
-resource contract and outstanding AWS acceptance. Backend CI now runs Django
-tests with PostgreSQL and an isolated Floci recovery suite.
+resource contract and outstanding AWS acceptance. Backend CI runs Django
+tests with PostgreSQL; a separate, path-filtered workflow runs the isolated
+Floci recovery suite.
 
 Checked 2026-10-25 against the working tree.
 
