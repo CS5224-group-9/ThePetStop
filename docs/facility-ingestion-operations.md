@@ -89,7 +89,7 @@ even if the first notice was lost; use reconciliation to repair missing notices.
 Local schedules are manual, while the disabled AWS stack includes the 15-minute
 reconciliation rule for activation after staging acceptance.
 
-Backend unit/database tests additionally inject partial dispatch, an interrupted query batch, rollback, stale snapshots, out-of-order status and count-drop approval. CI runs Django tests with PostgreSQL and the pinned Floci fixture suite without real credentials or live endpoints.
+Backend unit/database tests additionally inject partial dispatch, an interrupted query batch, rollback, stale snapshots, out-of-order status and count-drop approval. CI runs Django tests with PostgreSQL on every pull request and push to `main`. A separate workflow runs the pinned Floci fixture suite without real credentials or live endpoints when backend, facility script, Compose, or workflow files change.
 
 ## AWS handoff and release gate
 
