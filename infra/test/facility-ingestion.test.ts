@@ -44,7 +44,9 @@ test('internet workers are outside the VPC and only loader gets DB secrets', () 
   const loaders = functions.filter((row) => row.Properties.VpcConfig);
   expect(loaders).toHaveLength(1);
   expect(loaders[0].Properties.ImageConfig.Command).toEqual(['facilities.ingestion.handlers.load']);
-  expect(loaders[0].Properties.ReservedConcurrentExecutions).toBe(2);
+  for (const row of functions) {
+    expect(row.Properties.ReservedConcurrentExecutions).toBeUndefined();
+  }
   for (const row of functions.filter((row) => !row.Properties.VpcConfig)) {
     expect(row.Properties.Environment.Variables.DB_SECRET_ARN).toBeUndefined();
     expect(row.Properties.Environment.Variables.AWS_ENDPOINT_URL).toBeUndefined();

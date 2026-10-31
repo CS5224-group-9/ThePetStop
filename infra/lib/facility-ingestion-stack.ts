@@ -76,8 +76,6 @@ export class FacilityIngestionStack extends cdk.Stack {
         memorySize: 1024,
         timeout: cdk.Duration.seconds(['fetch', 'reconcile'].includes(stage) ? 180 : 120),
         environment: { ...common, ...environment },
-        reservedConcurrentExecutions:
-          stage === 'load' ? 2 : ['geocode', 'reconcile'].includes(stage) ? 1 : undefined,
         logGroup: twoWeekLogGroup(this, `${stage}Logs`),
         ...(inVpc
           ? {
