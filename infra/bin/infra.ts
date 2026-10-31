@@ -22,7 +22,12 @@ const storage = new StorageStack(app, `${prefix}-Storage`, { env });
 const auth = new AuthStack(app, `${prefix}-Auth`, { env, frontendUrl: storage.frontendUrl });
 new ApiStack(app, `${prefix}-Api`, { env, network, data, auth, storage });
 if (app.node.tryGetContext('facilityIngestion') === 'true') {
-  new FacilityIngestionStack(app, `${prefix}-FacilityIngestion`, { env, network, data });
+  new FacilityIngestionStack(app, `${prefix}-FacilityIngestion`, {
+    env,
+    network,
+    data,
+    enableSchedules: app.node.tryGetContext('facilityIngestionSchedules') === 'true',
+  });
 }
 
 cdk.Tags.of(app).add('Project', 'PetStop');
