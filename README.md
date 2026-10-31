@@ -47,6 +47,13 @@ $env:AWS_DEFAULT_REGION = "ap-southeast-1"
 aws --endpoint-url http://localhost:4566 s3api list-buckets
 ```
 
+These are dummy credentials for Floci. Local AWS SDK clients also need an
+endpoint pointing to Floci, such as `AWS_ENDPOINT_URL=http://localhost:4566`
+for clients that support it; check each feature's configuration. The facility
+ingestion scripts supply their own local endpoint and credentials. Before using
+real AWS, remove the dummy credentials and any Floci endpoint from the session
+and `backend/.env` so the intended AWS profile or role can be used.
+
 Inside Floci-launched Lambda containers, use `http://floci:4566` for AWS API
 calls and `db:5432` for PostgreSQL. `localhost` inside a Lambda container points
 back to that container. The overlay puts Floci and PostgreSQL on the shared
