@@ -42,15 +42,24 @@ yarn cdk bootstrap aws://<ACCOUNT_ID>/ap-southeast-1
 
 Defined in `bin/infra.ts`, one file each in `lib/`:
 
-| Stack                 | Contains                                                                                                                                                                                                               |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PetStop-Dev-Network` | VPC with isolated subnets in two AZs and no NAT gateway; S3 gateway endpoint; Secrets Manager interface endpoint in one AZ; security groups for the app Lambdas and the database                                       |
-| `PetStop-Dev-Data`    | RDS PostgreSQL 16 `db.t4g.micro` with a generated credentials secret, 7-day backups and deletion protection; the Django secret key. Termination protection is on.                                                      |
-| `PetStop-Dev-Storage` | S3 buckets `Web`, `ProductImages` (served at `/product-images/*`) and private, versioned `PetFiles`; CloudFront with OAC and a function that maps `/x/` to `/x/index.html`                                             |
-| `PetStop-Dev-Auth`    | Cognito user pool with managed login, the public SPA client (code + PKCE), groups `owner` and `merchant`, a trigger that adds `email` to access tokens, and a deploy-time fetch of the pool's public keys              |
-| `PetStop-Dev-Api`     | The Django image as two Lambdas in the VPC (`ApiFunction` for requests, `ManageFunction` for migrations); HTTP API whose catch-all route requires a Cognito JWT, with public `GET` routes for health and the catalogue |
+| Stack                                    | Contains                                                                                                                                                                                                                   |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PetStop-Dev-Network`                    | VPC with isolated subnets in two AZs and no NAT gateway; S3 gateway endpoint; Secrets Manager interface endpoint in one AZ; security groups for the app Lambdas and the database                                           |
+| `PetStop-Dev-Data`                       | RDS PostgreSQL 16 `db.t4g.micro` with a generated credentials secret, 7-day backups and deletion protection; the Django secret key. Termination protection is on.                                                          |
+| `PetStop-Dev-Storage`                    | S3 buckets `Web`, `ProductImages` (served at `/product-images/*`) and private, versioned `PetFiles`; CloudFront with OAC and a function that maps `/x/` to `/x/index.html`                                                 |
+| `PetStop-Dev-Auth`                       | Cognito user pool with managed login, the public SPA client (code + PKCE), groups `owner` and `merchant`, a trigger that adds `email` to access tokens, and a deploy-time fetch of the pool's public keys                  |
+| `PetStop-Dev-Api`                        | The Django image as two Lambdas in the VPC (`ApiFunction` for requests, `ManageFunction` for migrations); HTTP API whose catch-all route requires a Cognito JWT, with public `GET` routes for health and the catalogue     |
+| `PetStop-Dev-FacilityIngestion` (opt-in) | Five image Lambdas, private versioned S3 artifacts, FIFO work and failure queues, OneMap secret, disabled schedules, dashboard, alarms and recovery-operator policy. Include `-c facilityIngestion=true` to synthesize it. |
 
 All Lambda logs keep 14 days. Expect roughly US$25–35 a month, mostly RDS and the Secrets Manager endpoint; check the Budgets alarm after the first week.
+
+The ingestion stack's schedules stay disabled until staging acceptance. Populate
+its OneMap secret, subscribe a monitored destination to its alert topic, and
+apply database migrations before running it. The loader uses the existing VPC,
+RDS and secrets; internet workers run outside the VPC. No NAT is added. Follow
+[facility ingestion operations](../docs/facility-ingestion-operations.md) for
+the full handoff and release checks. The local bootstrap refuses AWS endpoints;
+CDK owns AWS provisioning.
 
 ## Commands
 

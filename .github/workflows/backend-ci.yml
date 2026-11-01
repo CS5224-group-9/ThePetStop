@@ -11,10 +11,20 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: petstop
+          POSTGRES_PASSWORD: petstop
+          POSTGRES_DB: petstop
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
     env:
       DJANGO_SECRET_KEY: ci-only-not-a-secret
-      # check doesn't connect; add credentials with a Postgres service for tests
-      DATABASE_URL: postgres://localhost:5432/petstop
+      DATABASE_URL: postgres://petstop:petstop@localhost:5432/petstop
     defaults:
       run:
         working-directory: backend
@@ -34,3 +44,6 @@ jobs:
 
       - name: Django system check
         run: uv run python manage.py check
+
+      - name: Django tests
+        run: uv run python manage.py test --noinput

@@ -27,7 +27,7 @@ Read the one that matches the task; they are not loaded automatically.
 - `frontend/` is the Next.js app. Follow `frontend/AGENTS.md` for its version-specific rules. Its dependency manager is Yarn (`yarn.lock`).
 - `backend/` is the Django API. Follow `backend/AGENTS.md` for its domain, security, and development rules. Its dependency manager is uv (`pyproject.toml` and `uv.lock`).
 - `docs/` holds the context files listed above. Update them when a decision is made or the implemented state changes.
-- `.github/workflows/` contains repository automation. Check which project a workflow actually covers before changing commands or assuming a CI check exists. At present `backend-ci.yml`, `frontend-ci.yml` and `infra-ci.yml` run linters, format checks and tests on every pull request and push to `main`; `deploy.yml` deploys `main` to the dev stage (see `infra/README.md`); and `aws-test.yml` is a manually triggered AWS connection check. Backend CI does not run the Django tests yet.
+- `.github/workflows/` contains repository automation. Check which project a workflow actually covers before changing commands or assuming a CI check exists. `backend-ci.yml` runs lint/format, Django checks/tests with PostgreSQL, and an isolated Floci recovery suite; frontend and infra workflows run their checks and tests on every pull request and push to `main`. `deploy.yml` deploys `main` to the dev stage (see `infra/README.md`); `aws-test.yml` is a manually triggered AWS connection check. Facility ingestion is opt-in CDK with schedules disabled until AWS acceptance.
 
 ## Sources versus repository
 
