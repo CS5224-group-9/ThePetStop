@@ -1,11 +1,15 @@
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from rest_framework import generics
-from rest_framework.permissions import AllowAny
+from rest_framework import generics, status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
 
 from .models import Category, Merchant, Product
+from .permissions import IsMerchant
 from .serializers import (
     CategorySerializer,
+    MerchantProductUpdateSerializer,
+    MerchantProductWriteSerializer,
     MerchantSerializer,
     ProductDetailSerializer,
     ProductSerializer,
@@ -98,3 +102,53 @@ class MerchantProductListView(generics.ListAPIView):
         return Product.objects.filter(merchant=merchant, active=True).select_related(
             "category", "merchant", "group"
         )
+
+
+def owned_products(user):
+    return Product.objects.filter(
+        merchant__owner=user, merchant__active=True, active=True
+    ).select_related("category", "merchant", "group")
+
+
+def owned_merchant(user):
+    return Merchant.objects.filter(owner=user, active=True).order_by("id").first()
+
+
+class OwnedMerchantProductListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated, IsMerchant]
+
+    def get_queryset(self):
+        return owned_products(self.request.user)
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return MerchantProductWriteSerializer
+        return ProductSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.request.method == "POST":
+            context["merchant"] = owned_merchant(self.request.user)
+        return context
+
+    def create(self, request, *args, **kwargs):
+        writer = self.get_serializer(data=request.data)
+        writer.is_valid(raise_exception=True)
+        product = writer.save()
+        return Response(
+            ProductSerializer(product, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class OwnedMerchantProductDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated, IsMerchant]
+    http_method_names = ["patch", "delete", "head", "options"]
+    serializer_class = MerchantProductUpdateSerializer
+
+    def get_queryset(self):
+        return owned_products(self.request.user)
+
+    def perform_destroy(self, instance):
+        instance.active = False
+        instance.save(update_fields=["active"])
