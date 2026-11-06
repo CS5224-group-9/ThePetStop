@@ -5,6 +5,7 @@ import { AuthStack } from '../lib/auth-stack';
 import { DataStack } from '../lib/data-stack';
 import { NetworkStack } from '../lib/network-stack';
 import { StorageStack } from '../lib/storage-stack';
+import { FacilityIngestionStack } from '../lib/facility-ingestion-stack';
 
 const app = new cdk.App();
 const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'ap-southeast-1' };
@@ -20,5 +21,13 @@ const data = new DataStack(app, `${prefix}-Data`, {
 const storage = new StorageStack(app, `${prefix}-Storage`, { env });
 const auth = new AuthStack(app, `${prefix}-Auth`, { env, frontendUrl: storage.frontendUrl });
 new ApiStack(app, `${prefix}-Api`, { env, network, data, auth, storage });
+if (app.node.tryGetContext('facilityIngestion') === 'true') {
+  new FacilityIngestionStack(app, `${prefix}-FacilityIngestion`, {
+    env,
+    network,
+    data,
+    enableSchedules: app.node.tryGetContext('facilityIngestionSchedules') === 'true',
+  });
+}
 
 cdk.Tags.of(app).add('Project', 'PetStop');

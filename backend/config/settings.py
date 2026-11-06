@@ -125,6 +125,7 @@ DATABASES = {
         ssl_require="DB_SECRET_ARN" in os.environ,
     )
 }
+DATABASES["default"].setdefault("OPTIONS", {}).setdefault("connect_timeout", 5)
 
 AUTH_USER_MODEL = "accounts.User"
 

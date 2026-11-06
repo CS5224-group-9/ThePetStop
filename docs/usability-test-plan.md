@@ -47,4 +47,29 @@ After sessions, report the number recruited and completing all tasks, completion
 
 ## Recruitment status
 
-Not recruited; no sessions have been run. The planned window is 3–5 Nov 2026. A team member must invite participants and coordinate session times.
+No participants have been recruited and no sessions have been run. The planned window is 3–5 Nov 2026. Use the copy and tracker below to recruit and schedule 5–6 adults who currently care for a pet in Singapore. A team member must send the invitation and confirm the session format and location with each participant.
+
+## Invitation template
+
+**Subject:** Volunteer for a 25-minute pet-owner app usability session (3–5 Nov)
+
+Hi! We are a student team testing a prototype for pet owners. We are looking for 5–6 adults in Singapore who currently care for a pet to try four short tasks in a 25-minute session between 3 and 5 November 2026. The tasks cover a pet record, finding a facility, comparing pet products, and a simulated checkout. Shops, products, pets and payment are sample data; no real payment will be made.
+
+Taking part is voluntary. You can stop at any time. We will record anonymous task notes only; we will not ask for your name, exact address, account password or real pet medical information. We will not record audio or video unless you separately agree. If you are interested, please reply with a preferred time window and whether you prefer an in-person or remote session. We will confirm the details directly. Thank you!
+
+Before sending, replace the contact instruction with the team's agreed reply channel. Do not promise compensation unless the team has approved it.
+
+## Scheduling tracker
+
+Use participant codes in this shared document. Keep names, contact details and exact locations out of it; the organizer can keep any necessary contact information separately and delete it after scheduling. Replace a slot with a confirmed time and environment only after agreement.
+
+| Code | Status | Preferred window (SGT) | Format agreed | Session confirmed | Completed |
+| --- | --- | --- | --- | --- | --- |
+| U01 | Not contacted |  |  |  |  |
+| U02 | Not contacted |  |  |  |  |
+| U03 | Not contacted |  |  |  |  |
+| U04 | Not contacted |  |  |  |  |
+| U05 | Not contacted |  |  |  |  |
+| U06 | Not contacted |  |  |  |  |
+
+Record the actual test environment (deployed dev or local) on the observation sheet. If only local standalone mode is available, describe the session as formative and note that API-backed flows were not tested. Do not fill in participant or result rows before sessions happen. The 64-row survey dataset remains synthetic and is not part of this participant sample.
