@@ -1,4 +1,7 @@
+from django.test import TestCase
 from rest_framework.test import APITestCase
+
+from config.lambda_handler import manage
 
 from .models import Category, Merchant, Product, ProductGroup
 
@@ -111,3 +114,14 @@ class CatalogueApiTests(APITestCase):
         response = self.client.get("/api/v1/merchants/not-a-shop/products/")
 
         self.assertEqual(response.status_code, 404)
+
+
+class LoadCatalogueTests(TestCase):
+    def test_manage_lambda_loads_fixtures_repeatably(self):
+        manage({"command": "load_catalogue"}, None)
+        counts = (Merchant.objects.count(), Product.objects.count())
+        result = manage({"command": "load_catalogue"}, None)
+
+        self.assertIn("Catalogue loaded", result["output"])
+        self.assertGreater(counts[1], 0)
+        self.assertEqual((Merchant.objects.count(), Product.objects.count()), counts)
