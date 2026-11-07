@@ -78,7 +78,7 @@ From `infra/`, with `AWS_PROFILE` set:
 `.github/workflows/deploy.yml` deploys `main` whenever a push changes `backend/`, `frontend/`, `infra/` or the workflow itself. It can also be started by hand from the Actions tab, but only on `main`. In order, it:
 
 1. runs `cdk deploy --all`, which builds and pushes the backend image;
-2. runs `migrate` through `ManageFunction`, and fails if the command raises;
+2. runs `migrate`, then `load_catalogue`, through `ManageFunction`, and fails if either raises; the catalogue load upserts the fictional shops from `backend/marketplace/fixtures/catalogue/`, so fixture values overwrite edits to those rows;
 3. checks that `<ApiBaseUrl>health/` answers;
 4. builds the frontend in API mode from the stack outputs; no frontend settings are stored in GitHub;
 5. uploads it to the web bucket and invalidates CloudFront.
