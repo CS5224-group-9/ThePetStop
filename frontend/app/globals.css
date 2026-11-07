@@ -4419,3 +4419,172 @@ footer a:hover {
   position: static;
   margin-top: 18px;
 }
+
+/* Pet profiles: edit and delete actions, inline forms, photos and dev sign-in. */
+textarea {
+  font: inherit;
+  width: 100%;
+  max-width: 100%;
+  min-height: 88px;
+  border: 1px solid var(--control-line);
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.875rem;
+  resize: vertical;
+}
+textarea:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.button.danger {
+  background: var(--urgent);
+  color: var(--on-accent);
+}
+.button.danger:hover {
+  background: color-mix(in srgb, var(--urgent) 82%, #000);
+}
+.text-button.danger {
+  color: var(--urgent);
+}
+.text-button.danger:hover {
+  background: var(--urgent-soft);
+}
+.heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.record-row > .row-actions {
+  flex-shrink: 0;
+  justify-content: flex-end;
+}
+.records-table .row-actions {
+  min-width: 120px;
+}
+.records-table .next-due-cell .badge {
+  display: table;
+  margin-top: 7px;
+}
+.records-table .next-due-cell .text-link {
+  display: flex;
+  width: fit-content;
+}
+.record-notes {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.record-edit-row td {
+  max-width: none;
+  background: var(--group);
+}
+.record-edit-row .record-form {
+  margin: 0;
+  background: var(--surface);
+}
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.inline-form > label {
+  display: flex;
+  flex: 1 1 180px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+.inline-form > input {
+  flex: 1 1 180px;
+}
+.inline-form > p,
+.inline-form > .form-error {
+  flex-basis: 100%;
+}
+.inline-form > .form-error {
+  margin: 0;
+}
+.record-row > .inline-form {
+  flex: 1;
+  min-width: 0;
+}
+.photo-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+}
+.photo-field > .inline-form {
+  flex: 1 1 260px;
+}
+.danger-zone {
+  border: 1px solid var(--urgent-soft);
+}
+.danger-zone h2 {
+  color: var(--urgent);
+  margin-bottom: 8px;
+}
+.danger-zone > .button {
+  margin-top: 16px;
+}
+.dossier-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.identity-panel .badge + .badge {
+  margin-left: 6px;
+}
+.dev-login-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.dev-login-list .button {
+  width: 100%;
+  justify-content: space-between;
+  text-align: left;
+}
+.dev-login-list .button small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+@media (max-width: 700px) {
+  .photo-field {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .photo-field > .inline-form {
+    flex-basis: auto;
+    width: 100%;
+  }
+  .heading-actions .button {
+    font-size: 0.75rem;
+    padding: 11px 15px;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .button.danger {
+    color: #4a0f22;
+  }
+  .button.danger:hover {
+    background: color-mix(in srgb, var(--urgent) 82%, #fff);
+  }
+}

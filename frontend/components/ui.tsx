@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
 import Image from "next/image";
-import { transferPrivateFile } from "@/lib/api/client";
+import { localUI } from "@/lib/data-source";
+import { photoCache } from "@/lib/api/photo-cache";
+import type { Reminder } from "@/lib/api/types";
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
     medical: (
@@ -169,56 +171,83 @@ export function Empty({
     </div>
   );
 }
+/**
+ * A pet's private photo, or a paw placeholder. API photos are downloaded once
+ * per `photoVersion` into the shared photo cache: a fresh presigned
+ * `photoUrl` with the same version neither refetches nor flickers.
+ */
 export function PetAvatar({
   species,
   large = false,
+  petId = "",
   photoUrl = null,
+  photoVersion = null,
 }: {
   species: string;
   large?: boolean;
+  petId?: string;
   photoUrl?: string | null;
+  photoVersion?: string | null;
 }) {
-  const [photo, setPhoto] = useState<{ source: string; url: string } | null>(
-    null,
-  );
+  // Local mode keeps photos as in-memory blob URLs; render them directly.
+  const direct = localUI && photoUrl?.startsWith("blob:") ? photoUrl : null;
+  const key = photoVersion ? `${petId}:${photoVersion}` : "";
+  const [loaded, setLoaded] = useState<{ key: string; url: string | null }>({
+    key: "",
+    url: null,
+  });
+  const [broken, setBroken] = useState<string | null>(null);
   useEffect(() => {
-    if (!photoUrl) return;
-    let current = true;
-    let objectUrl: string | null = null;
-    const controller = new AbortController();
-    transferPrivateFile(photoUrl, { signal: controller.signal })
-      .then((response) => response.blob())
-      .then((blob) => {
-        if (!current || !blob.type.startsWith("image/")) return;
-        objectUrl = URL.createObjectURL(blob);
-        setPhoto({ source: photoUrl, url: objectUrl });
-      })
-      .catch(() => {
-        /* Keep a neutral placeholder if the private photo is unavailable. */
-      });
+    if (direct || !photoVersion) return;
+    let live = true;
+    const current = `${petId}:${photoVersion}`;
+    void photoCache.load(petId, photoVersion, photoUrl).then((url) => {
+      if (live) setLoaded({ key: current, url });
+    });
     return () => {
-      current = false;
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      live = false;
     };
-  }, [photoUrl]);
+  }, [petId, photoVersion, photoUrl, direct]);
+  const src =
+    direct ??
+    (key
+      ? loaded.key === key
+        ? loaded.url
+        : photoCache.peek(petId, photoVersion as string)
+      : null);
   return (
     <div
       className={`pet-avatar ${large ? "large" : ""}`}
       role="img"
       aria-label={`${species} profile`}
     >
-      {photo && photo.source === photoUrl ? (
+      {src && src !== broken ? (
         <Image
-          src={photo.url}
+          src={src}
           alt={`${species} profile photo`}
           width={180}
           height={180}
-          onError={() => setPhoto(null)}
+          onError={() => {
+            setBroken(src);
+            if (!direct) photoCache.forget(petId);
+          }}
         />
       ) : (
         <Icon name="paw" size={large ? 40 : 22} />
       )}
     </div>
   );
+}
+/** Completed, Overdue, Due soon or Upcoming, from the reminder's flags. */
+export function ReminderBadge({
+  reminder,
+  upcomingTone,
+}: {
+  reminder: Reminder;
+  upcomingTone: "green" | "neutral";
+}) {
+  if (reminder.done) return <Badge tone="green">Completed</Badge>;
+  if (reminder.is_overdue) return <Badge tone="rose">Overdue</Badge>;
+  if (reminder.is_due_soon) return <Badge tone="amber">Due soon</Badge>;
+  return <Badge tone={upcomingTone}>Upcoming</Badge>;
 }

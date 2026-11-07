@@ -39,6 +39,7 @@ export function createContractServer() {
       image_url: null,
     },
   ];
+  const storage = "http://127.0.0.1:4174/storage/";
   const pet = {
     id: "pet-1",
     name: "Contract Pet",
@@ -49,17 +50,24 @@ export function createContractServer() {
     microchip_no: "702000000000001",
     allergies: [],
     diet_notes: "",
+    weight_kg: null,
+    photo_version: null,
   };
   const records = new Map([["pet-1", []]]),
     pets = [pet],
     reminders = [],
     orders = [],
     cart = [],
-    docs = [],
+    docs = new Map([["pet-1", []]]),
+    pendingPhotos = new Map(),
     files = new Map();
   const json = (res, body, status = 200) => {
     res.writeHead(status, { "content-type": "application/json" });
     res.end(JSON.stringify(body));
+  };
+  const empty = (res) => {
+    res.writeHead(204);
+    res.end();
   };
   const page = (results) => ({
     count: results.length,
@@ -67,12 +75,64 @@ export function createContractServer() {
     previous: null,
     results,
   });
-  const error = (res, status, message) =>
-    json(
-      res,
-      { error: { code: `error_${status}`, message, details: {} } },
-      status,
+  const error = (res, status, message, code = `error_${status}`) =>
+    json(res, { error: { code, message, details: {} } }, status);
+  // Asia/Singapore calendar dates, like the backend's reminder flags.
+  const todaySG = () =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Singapore",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  const plusDays = (date, days) => {
+    const [y, m, d] = date.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  };
+  const reminderRow = (r) => {
+    const due = String(r.due_at).slice(0, 10),
+      today = todaySG();
+    return {
+      ...r,
+      is_overdue: !r.done && due < today,
+      is_due_soon: !r.done && due >= today && due <= plusDays(today, 7),
+    };
+  };
+  const petRow = (p) => ({
+    ...p,
+    // A fresh "presigned" URL on every response; photo_version is the cache key.
+    photo_url: p.photo_version
+      ? `${storage}photos/${p.id}/${p.photo_version}?sig=${randomUUID()}`
+      : null,
+  });
+  const docRow = (d) => ({
+    ...d,
+    download_url:
+      d.status === "ready" ? `${storage}documents/${d.pet}/${d.id}` : null,
+  });
+  const pick = (body, fields) =>
+    Object.fromEntries(
+      Object.entries(body).filter(([key]) => fields.includes(key)),
     );
+  const petFields = [
+    "name",
+    "species",
+    "breed",
+    "sex",
+    "date_of_birth",
+    "microchip_no",
+    "allergies",
+    "diet_notes",
+    "weight_kg",
+  ];
+  const recordFields = [
+    "name",
+    "record_type",
+    "date",
+    "next_due",
+    "clinic",
+    "notes",
+  ];
   const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", web);
     res.setHeader(
@@ -191,13 +251,20 @@ export function createContractServer() {
           "Storage must not receive application authorization",
         );
       if (req.method === "PUT") {
-        files.set(url.pathname, raw);
+        files.set(url.pathname, {
+          raw,
+          type: req.headers["content-type"] || "application/octet-stream",
+        });
         res.writeHead(200);
         res.end();
         return;
       }
-      res.writeHead(200, { "content-type": "application/pdf" });
-      res.end(files.get(url.pathname) || Buffer.from("%PDF-1.4 test"));
+      const file = files.get(url.pathname);
+      res.writeHead(200, {
+        "content-type": file?.type || "application/pdf",
+        "cache-control": "private, no-store",
+      });
+      res.end(file?.raw || Buffer.from("%PDF-1.4 test"));
       return;
     }
     const path = url.pathname.replace("/api/v1/", "");
@@ -250,60 +317,200 @@ export function createContractServer() {
         groups: user.role === "merchant" ? ["merchant"] : ["owner"],
         merchant: user.role === "merchant" ? m1 : null,
       });
+    const ownPet = (petId) =>
+      user.role === "merchant" ? undefined : pets.find((p) => p.id === petId);
     if (path === "pets/") {
       if (req.method === "POST") {
-        const p = { ...body, id: "pet-" + randomUUID() };
+        const p = {
+          breed: "",
+          sex: "unknown",
+          date_of_birth: null,
+          microchip_no: null,
+          allergies: [],
+          diet_notes: "",
+          weight_kg: null,
+          ...pick(body, petFields),
+          id: "pet-" + randomUUID(),
+          photo_version: null,
+        };
         pets.push(p);
         records.set(p.id, []);
-        return json(res, p, 201);
+        docs.set(p.id, []);
+        return json(res, petRow(p), 201);
       }
-      return json(res, page(user.role === "merchant" ? [] : pets));
+      return json(res, page(user.role === "merchant" ? [] : pets.map(petRow)));
     }
-    if (/^pets\/[^/]+\/records\/$/.test(path)) {
-      const petId = path.split("/")[1];
-      if (req.method === "POST") {
-        const record = { ...body, id: randomUUID() };
-        records.get(petId)?.push(record);
-        if (record.next_due)
-          reminders.push({
-            id: randomUUID(),
-            pet: petId,
-            title: record.name,
-            due_at: record.next_due + "T09:00:00+08:00",
-            done: false,
-          });
-        return json(res, record, 201);
+    if (/^pets\/[^/]+\//.test(path)) {
+      const [, petId, section, itemId, action] = path.split("/");
+      const p = ownPet(petId);
+      if (!p) return error(res, 404, "Not found", "not_found");
+      if (section === "" && path === `pets/${petId}/`) {
+        if (req.method === "PATCH") Object.assign(p, pick(body, petFields));
+        if (req.method === "DELETE") {
+          pets.splice(pets.indexOf(p), 1);
+          records.delete(petId);
+          docs.delete(petId);
+          pendingPhotos.delete(petId);
+          for (let i = reminders.length - 1; i >= 0; i--)
+            if (reminders[i].pet === petId) reminders.splice(i, 1);
+          return empty(res);
+        }
+        return json(res, petRow(p));
       }
-      return json(res, page(records.get(petId) || []));
+      if (path === `pets/${petId}/photo-upload/` && req.method === "POST") {
+        const uploadUrl = `${storage}photos/${petId}/${randomUUID()}`;
+        pendingPhotos.set(petId, uploadUrl);
+        return json(res, {
+          upload_url: uploadUrl,
+          upload_headers: { "Content-Type": body.content_type },
+        });
+      }
+      if (
+        path === `pets/${petId}/photo-upload/complete/` &&
+        req.method === "POST"
+      ) {
+        const pending = pendingPhotos.get(petId);
+        if (!pending || !files.has(new URL(pending).pathname))
+          return error(
+            res,
+            409,
+            "The file has not finished uploading. Try again.",
+            "upload_incomplete",
+          );
+        p.photo_version = pending.split("/").pop();
+        pendingPhotos.delete(petId);
+        return json(res, petRow(p));
+      }
+      if (path === `pets/${petId}/photo/` && req.method === "DELETE") {
+        p.photo_version = null;
+        pendingPhotos.delete(petId);
+        return empty(res);
+      }
+      if (section === "records") {
+        const list = records.get(petId);
+        if (path === `pets/${petId}/records/`) {
+          if (req.method === "POST") {
+            const record = {
+              clinic: "",
+              notes: "",
+              next_due: null,
+              ...pick(body, recordFields),
+              id: randomUUID(),
+              pet: petId,
+            };
+            list.push(record);
+            return json(res, record, 201);
+          }
+          return json(res, page(list));
+        }
+        const record = list.find((r) => r.id === itemId);
+        if (!record || action !== "")
+          return error(res, 404, "Not found", "not_found");
+        if (req.method === "PATCH")
+          Object.assign(record, pick(body, recordFields));
+        if (req.method === "DELETE") {
+          list.splice(list.indexOf(record), 1);
+          for (const r of reminders)
+            if (r.health_record === record.id) r.health_record = null;
+          for (const d of docs.get(petId))
+            if (d.health_record === record.id) d.health_record = null;
+          return empty(res);
+        }
+        return json(res, record);
+      }
+      if (section === "documents") {
+        const list = docs.get(petId);
+        if (path === `pets/${petId}/documents/`) {
+          if (req.method === "POST") {
+            const doc = {
+              id: randomUUID(),
+              pet: petId,
+              health_record: body.health_record ?? null,
+              title: body.title,
+              content_type: body.content_type,
+              size_bytes: body.size_bytes,
+              status: "pending",
+              uploaded_at: null,
+              created_at: new Date().toISOString(),
+            };
+            list.push(doc);
+            return json(
+              res,
+              {
+                document: docRow(doc),
+                upload_url: `${storage}documents/${petId}/${doc.id}`,
+                upload_headers: { "Content-Type": body.content_type },
+              },
+              201,
+            );
+          }
+          return json(
+            res,
+            page(list.filter((d) => d.status === "ready").map(docRow)),
+          );
+        }
+        const doc = list.find((d) => d.id === itemId);
+        if (!doc) return error(res, 404, "Not found", "not_found");
+        if (action === "complete" && req.method === "POST") {
+          if (!files.has(`/storage/documents/${petId}/${doc.id}`))
+            return error(
+              res,
+              409,
+              "The file has not finished uploading. Try again.",
+              "upload_incomplete",
+            );
+          if (doc.status !== "ready") {
+            doc.status = "ready";
+            doc.uploaded_at = new Date().toISOString();
+          }
+          return json(res, docRow(doc));
+        }
+        if (action !== "") return error(res, 404, "Not found", "not_found");
+        if (req.method === "DELETE") {
+          list.splice(list.indexOf(doc), 1);
+          return empty(res);
+        }
+        if (doc.status !== "ready")
+          return error(res, 404, "Not found", "not_found");
+        if (req.method === "PATCH")
+          Object.assign(doc, pick(body, ["title", "health_record"]));
+        return json(res, docRow(doc));
+      }
+      return error(res, 404, "Not found", "not_found");
     }
     if (path === "reminders/") {
       if (req.method === "POST") {
-        const reminder = { ...body, id: randomUUID(), done: false };
+        const reminder = {
+          health_record: null,
+          ...pick(body, ["pet", "title", "due_at", "health_record"]),
+          id: randomUUID(),
+          done: body.done === true,
+        };
+        if (!ownPet(reminder.pet))
+          return error(res, 400, "Some fields are invalid.", "invalid");
         reminders.push(reminder);
-        return json(res, reminder, 201);
+        return json(res, reminderRow(reminder), 201);
       }
-      return json(res, page(user.role === "merchant" ? [] : reminders));
+      return json(
+        res,
+        page(user.role === "merchant" ? [] : reminders.map(reminderRow)),
+      );
     }
     if (/^reminders\/[^/]+\/$/.test(path)) {
-      const rem = reminders.find((r) => r.id === path.split("/")[1]);
-      if (!rem) return error(res, 404, "Not found");
-      rem.done = body.done;
-      return json(res, rem);
-    }
-    if (/^pets\/[^/]+\/documents\/$/.test(path)) {
-      if (req.method === "POST") {
-        const doc = {
-          id: randomUUID(),
-          title: body.title,
-          content_type: body.content_type,
-          size_bytes: body.size_bytes,
-          uploaded_at: new Date().toISOString(),
-          download_url: "http://127.0.0.1:4174/storage/test",
-        };
-        docs.push(doc);
-        return json(res, { document: doc, upload_url: doc.download_url }, 201);
+      const rem = reminders.find(
+        (r) => r.id === path.split("/")[1] && ownPet(r.pet),
+      );
+      if (!rem) return error(res, 404, "Not found", "not_found");
+      if (req.method === "PATCH")
+        Object.assign(
+          rem,
+          pick(body, ["title", "due_at", "done", "health_record"]),
+        );
+      if (req.method === "DELETE") {
+        reminders.splice(reminders.indexOf(rem), 1);
+        return empty(res);
       }
-      return json(res, page(docs));
+      return json(res, reminderRow(rem));
     }
     if (path === "cart/")
       return json(res, {

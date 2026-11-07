@@ -2,11 +2,11 @@
 
 ## Standalone frontend UI
 
-The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six fictional merchant catalogues, facility search with a live OneMap basemap and sample pins, care records/reminders, browser-persisted cart and simulated orders, plus merchant editing. No API or Cognito setup is needed to explore these flows. Local data is a single browser workspace for sample information; document files remain in tab memory until reload. Listings are fictional and unverified. Set `NEXT_PUBLIC_DATA_SOURCE=api` to opt into the previously implemented API/Cognito boundary described below; backend endpoints remain a separate task. Local mode does not replace API authorization or implement AWS services.
+The frontend now defaults to `NEXT_PUBLIC_DATA_SOURCE=local`: sample pets, six fictional merchant catalogues, facility search with a live OneMap basemap and sample pins, care records/reminders, browser-persisted cart and simulated orders, plus merchant editing. No API or Cognito setup is needed to explore these flows. Local data is a single browser workspace for sample information; document files and pet photos remain in tab memory until reload. Listings are fictional and unverified. Set `NEXT_PUBLIC_DATA_SOURCE=api` to opt into the previously implemented API/Cognito boundary described below; the marketplace catalogue and pet profile APIs are implemented, while the other feature endpoints remain outstanding. Local mode does not replace API authorization or implement AWS services.
 
 The current layout, the target layout for the MVP, the API contract, and the rules that keep the domains separate. Create a directory when its first real file goes in, not before.
 
-Last updated 2026-10-19.
+Last updated 2026-10-31.
 
 ## Current structure
 
@@ -20,10 +20,12 @@ cs5224-petstop/
 │   │   ├── frontend-ci.yml    # ESLint, Prettier, tests and static build
 │   │   └── infra-ci.yml       # Prettier, tsc and CDK template tests
 │   └── pull_request_template.md
-├── backend/                # Django API (uv); api, accounts, and empty feature apps
-├── docker-compose.yml      # Local PostgreSQL 16
+├── backend/                # Django API (uv); api, accounts, pets, facilities (location search), marketplace (catalogue)
+├── docker-compose.yml      # Local PostgreSQL 16 on 127.0.0.1, port PETSTOP_DB_PORT (default 5432)
 ├── frontend/               # Next.js app (Yarn); standalone UI with optional API mode
-├── docs/                   # Context files (this directory)
+├── infra/                  # AWS CDK app (Yarn)
+├── docs/                   # Context files (this directory); openapi/ holds the per-domain API contracts
+├── .env.example            # PETSTOP_DB_PORT for docker compose
 ├── AGENTS.md
 ├── CLAUDE.md
 └── README.md
@@ -57,18 +59,24 @@ cs5224-petstop/
 backend/
 ├── config/
 │   ├── settings.py            # One settings module, driven by environment variables
+│   ├── dev_auth.py            # When the local-only dev sign-in is enabled (DEBUG, DJANGO_DEV_AUTH, not Lambda)
 │   └── urls.py                # admin/ and api/v1/
 ├── api/                       # Shared code, no models
 │   ├── urls.py                # Mounts each app under api/v1/
 │   ├── views.py               # GET /health/
-│   ├── authentication.py      # Cognito JWT verification → accounts.User
+│   ├── authentication.py      # Cognito JWT verification → accounts.User; local-only `Authorization: Dev <handle>`
 │   ├── permissions.py         # IsMerchant and other shared permission classes
 │   ├── pagination.py
 │   ├── exceptions.py          # The single error format
-│   └── storage.py             # Presigned S3 URL helpers
+│   ├── storage.py             # Private pet files: presigned S3 PUT/GET, HEAD and delete; local signed-URL backend in DEBUG
+│   ├── local_files.py         # /api/v1/local-files/<token>/, mounted only with the local storage backend
+│   └── log_filters.py         # Redacts local file tokens from logs
 ├── accounts/                  # User model, GET /me/
 ├── pets/                      # Feature 2: Pet, HealthRecord, PetDocument, Reminder
-│   └── reminders.py           # Which reminders are upcoming or overdue
+│   ├── reminders.py           # Singapore due dates, overdue and due-soon flags
+│   ├── uploads.py             # Upload tickets, completion check, presigned download URLs, stale-upload purge
+│   ├── tests/
+│   └── management/commands/seed_pets.py   # Idempotent local demo pets, records and reminders
 ├── facilities/                # Feature 1: Facility
 │   ├── search.py              # Bounding box and haversine distance on latitude/longitude (no PostGIS)
 │   ├── avs.py                 # Fetch and parse AVS registries
@@ -109,7 +117,7 @@ frontend/
 ├── app/
 │   ├── page.tsx               # Dashboard: pets, upcoming reminders, shortcuts
 │   ├── login/  signup/
-│   ├── pets/                  # List; new; detail?id= (profile, records, documents, reminders)
+│   ├── pets/                  # List; new; edit?id=; detail?id= (profile, records, documents, reminders)
 │   ├── map/                   # Map and directory, facility detail panel
 │   ├── shop/                  # Catalogue; product?id=; merchant?slug=
 │   ├── cart/
@@ -118,17 +126,22 @@ frontend/
 │   └── merchant/              # Merchant portal: products, orders
 ├── components/
 └── lib/
-    ├── api/                   # The one API client; types generated from the OpenAPI schema
-    └── auth/                  # Cognito sign-in and token handling
+    ├── api/                   # The one API client, services, and wire adapters written to match docs/openapi/
+    │   └── photo-cache.ts     # Downloaded pet photos as blob URLs, keyed by pet and photo_version
+    ├── auth/                  # Cognito sign-in and token handling
+    │   └── dev.ts             # Local-only dev sign-in (NEXT_PUBLIC_DEV_AUTH; localhost and 127.0.0.1 only)
+    ├── reminders.ts           # Overdue and due-soon rule; which records still need a suggested reminder
+    ├── pet-input.ts           # Photo, document and allergy input checks
+    └── form-error.ts          # Turns API validation errors into one form message
 ```
 
 The API base URL comes from `NEXT_PUBLIC_API_BASE_URL`. Nothing else calls `fetch` against the API directly.
 
-The frontend implements the listed routes plus `/auth/callback/` and `/pets/reminders/`. Cognito sign-in uses `oidc-client-ts`; MapLibre renders OneMap tiles. `lib/api/` owns requests, adapters and domain operations; `lib/auth/` owns OAuth session handling. Local mode uses fictional sample data and browser storage; API mode uses the configured backend. The feature backend/schema is not implemented yet, so the frontend wire contract is explicitly provisional: see [frontend-integration.md](frontend-integration.md). `tests/api.test.mts` checks the HTTP/contract boundary and `tests/local-ui.test.mts` checks local interactions. Frontend CI now includes those checks and a static build.
+The frontend implements the listed routes plus `/auth/callback/` and `/pets/reminders/`. Cognito sign-in uses `oidc-client-ts`; MapLibre renders OneMap tiles. `lib/api/` owns requests, adapters and domain operations; `lib/auth/` owns OAuth session handling. Local mode uses fictional sample data and browser storage; API mode uses the configured backend. The pet profile API is implemented and its contract is [openapi/pets.yaml](openapi/pets.yaml); the wire contract for facilities, cart, checkout, orders and merchant writes is still provisional: see [frontend-integration.md](frontend-integration.md). `tests/api.test.mts` checks the HTTP/contract boundary, `tests/local-ui.test.mts` checks local interactions, and `tests/pets-api.test.mts` and `tests/pets-local.test.mts` cover the pet services in both modes. Frontend CI now includes those checks and a static build.
 
 ## API contract
 
-All routes are under `/api/v1/`. The OpenAPI schema is generated by drf-spectacular at `/api/v1/schema/`, and the frontend types come from it.
+All routes are under `/api/v1/`. Each implemented domain has a hand-written OpenAPI contract in `docs/openapi/` (for example [openapi/pets.yaml](openapi/pets.yaml)), and the frontend's wire parsing in `lib/api/adapters.ts` is written to match it.
 
 ### Conventions
 
@@ -149,15 +162,18 @@ All routes are under `/api/v1/`. The OpenAPI schema is generated by drf-spectacu
 | --- | --- | --- | --- |
 | `/health/` | GET | Public | A |
 | `/me/` | GET | User | A |
-| `/pets/` | GET, POST | User | B |
-| `/pets/{id}/` | GET, PATCH, DELETE | Pet owner | B |
+| `/pets/` | GET (read-only), POST | User | B |
+| `/pets/{id}/` | GET, PATCH, DELETE (also its records, documents, reminders and files) | Pet owner | B |
 | `/pets/{id}/photo-upload/` | POST → presigned PUT URL | Pet owner | B |
+| `/pets/{id}/photo-upload/complete/` | POST (verify the upload, make it the pet's photo) | Pet owner | B |
+| `/pets/{id}/photo/` | DELETE | Pet owner | B |
 | `/pets/{id}/records/` | GET, POST | Pet owner | B |
 | `/pets/{id}/records/{rid}/` | GET, PATCH, DELETE | Pet owner | B |
-| `/pets/{id}/documents/` | GET (with presigned GET URLs), POST → presigned PUT URL | Pet owner | B |
-| `/pets/{id}/documents/{did}/` | DELETE | Pet owner | B |
-| `/reminders/` | GET (upcoming and overdue, all pets), POST | User | B |
-| `/reminders/{id}/` | PATCH (done, due date), DELETE | Reminder owner | B |
+| `/pets/{id}/documents/` | GET (ready only, with presigned GET URLs), POST → pending document and presigned PUT URL | Pet owner | B |
+| `/pets/{id}/documents/{did}/` | GET, PATCH (title, health record) on ready documents; DELETE (pending or ready) | Pet owner | B |
+| `/pets/{id}/documents/{did}/complete/` | POST (verify the upload, mark the document ready) | Pet owner | B |
+| `/reminders/?pet&done` | GET (all reminders incl. done, with flags), POST | User | B |
+| `/reminders/{id}/` | GET, PATCH (title, due date, done, health record), DELETE | Reminder owner | B |
 | `/facilities/?lat&lng&radius_km&type&q&postal_code` | GET | Public | C |
 | `/facilities/{id}/` | GET | Public | C |
 | `/locations/search/?q=...` | GET | Public | C |

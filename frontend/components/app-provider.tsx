@@ -18,12 +18,26 @@ import {
   forgetSession,
   rememberSession,
 } from "@/lib/auth/cognito";
+import {
+  clearDevHandle,
+  devAuthEnabled,
+  devHandle,
+  devSignInError,
+  setDevHandle,
+} from "@/lib/auth/dev";
+import { photoCache } from "@/lib/api/photo-cache";
 import { services } from "@/lib/api/services";
 import { emptyState } from "@/lib/api/types";
 import type {
   AppState,
   Domain,
+  HealthRecord,
   NewPetInput,
+  Pet,
+  PetInput,
+  Profile,
+  RecordInput,
+  ReminderUpdate,
   ResourceStatus,
   ShippingInput,
 } from "@/lib/api/types";
@@ -51,18 +65,32 @@ type Context = {
   notice: string;
   notify: (text: string) => void;
   signOut: () => Promise<void>;
+  /** LOCAL DEVELOPMENT ONLY: sign in as a seeded user (see lib/auth/dev.ts). */
+  signInDev: (handle: string) => Promise<void>;
   retryAuth: () => void;
   refresh: (domain: Domain) => Promise<void>;
   actions: {
     createPet: (input: NewPetInput) => Promise<string>;
+    updatePet: (id: string, input: PetInput) => Promise<void>;
+    deletePet: (id: string) => Promise<void>;
+    uploadPetPhoto: (id: string, file: File) => Promise<void>;
+    removePetPhoto: (id: string) => Promise<void>;
     addRecord: (
       pet: string,
       input: Parameters<typeof services.addRecord>[1],
     ) => Promise<void>;
+    updateRecord: (
+      pet: string,
+      record: string,
+      input: Partial<RecordInput>,
+    ) => Promise<void>;
+    deleteRecord: (pet: string, record: string) => Promise<void>;
     createReminder: (
       input: Parameters<typeof services.createReminder>[0],
     ) => Promise<void>;
     setReminder: (id: string, done: boolean) => Promise<void>;
+    updateReminder: (id: string, input: ReminderUpdate) => Promise<void>;
+    deleteReminder: (id: string) => Promise<void>;
     addCart: (id: string) => Promise<void>;
     updateCart: (id: string, quantity: number) => Promise<void>;
     removeCart: (id: string) => Promise<void>;
@@ -83,12 +111,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const generation = useRef(0);
   const locks = useRef(new Set<string>());
   const versions = useRef(new Map<Domain, number>());
+  // True while an explicit development sign-in runs; its form reports errors.
+  const signingInDev = useRef(false);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
-  const clearPrivate = useCallback(() => {
-    generation.current++;
-    forgetSession();
+  const resetPrivate = useCallback(() => {
     setResources((s) => ({
       ...s,
       ...Object.fromEntries(
@@ -104,8 +132,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       merchants: s.merchants,
       facilities: s.facilities,
     }));
-    setAuthStatus("signed-out");
   }, []);
+  const clearPrivate = useCallback(() => {
+    generation.current++;
+    forgetSession();
+    // Downloaded photos belong to the previous account.
+    photoCache.clear();
+    resetPrivate();
+    setAuthStatus("signed-out");
+  }, [resetPrivate]);
   const refresh = useCallback(async (domain: Domain) => {
     const epoch = generation.current;
     const version = (versions.current.get(domain) || 0) + 1;
@@ -167,38 +202,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }));
     }
   }, []);
-  const loadIdentity = useCallback(async () => {
+  const loadIdentity = useCallback(async (): Promise<AuthStatus> => {
     if (localUI) {
       const profile = await services.me();
       setState((s) => ({ ...s, profile, role: "owner" }));
       setAuthStatus("signed-in");
-      return;
+      return "signed-in";
+    }
+    if (devAuthEnabled()) {
+      const epoch = ++generation.current;
+      // Read now, so a superseded call cannot act for a later sign-in.
+      const explicit = signingInDev.current;
+      setAuthError(null);
+      resetPrivate();
+      if (!devHandle()) {
+        setAuthStatus("signed-out");
+        return "signed-out";
+      }
+      setAuthStatus("loading");
+      let profile: Profile;
+      try {
+        profile = await services.me();
+      } catch (error) {
+        if (explicit) {
+          clearPrivate();
+          clearDevHandle();
+          throw new Error(devSignInError(error));
+        }
+        if (epoch !== generation.current) return "loading";
+        setAuthError(devSignInError(error));
+        setAuthStatus("error");
+        return "error";
+      }
+      if (epoch !== generation.current) return "loading";
+      const role = profile.groups.includes("merchant") ? "merchant" : "owner";
+      setState((s) => ({
+        ...emptyState(),
+        products: s.products,
+        categories: s.categories,
+        merchants: s.merchants,
+        facilities: s.facilities,
+        role,
+        profile,
+      }));
+      setAuthStatus("signed-in");
+      return "signed-in";
     }
     if (!authConfigured()) {
       setAuthStatus("signed-out");
-      return;
+      return "signed-out";
     }
     const epoch = ++generation.current;
     setAuthStatus("loading");
     setAuthError(null);
-    setResources((s) => ({
-      ...s,
-      ...Object.fromEntries(
-        (["pets", "reminders", "cart", "orders", "merchant"] as Domain[]).map(
-          (domain) => [domain, { loading: true, error: null, loaded: false }],
-        ),
-      ),
-    }));
-    setState((s) => ({
-      ...emptyState(),
-      products: s.products,
-      categories: s.categories,
-      merchants: s.merchants,
-      facilities: s.facilities,
-    }));
+    resetPrivate();
     try {
       const user = await getAuthManager().getUser();
-      if (epoch !== generation.current) return;
+      if (epoch !== generation.current) return "loading";
       if (!user || user.expired) {
         if (
           canRestoreSession() &&
@@ -211,13 +271,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               : window.location.pathname + window.location.search,
             true,
           );
-          return;
+          return "loading";
         }
         clearPrivate();
-        return;
+        return "signed-out";
       }
       const profile = await services.me();
-      if (epoch !== generation.current) return;
+      if (epoch !== generation.current) return "loading";
       const role = profile.groups.includes("merchant") ? "merchant" : "owner";
       setState((s) => ({
         ...emptyState(),
@@ -229,28 +289,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         profile,
       }));
       setAuthStatus("signed-in");
+      return "signed-in";
     } catch (error) {
-      if (epoch === generation.current) {
-        setAuthError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load your account.",
-        );
-        setAuthStatus("error");
-      }
+      if (epoch !== generation.current) return "loading";
+      setAuthError(
+        error instanceof Error ? error.message : "Unable to load your account.",
+      );
+      setAuthStatus("error");
+      return "error";
     }
-  }, [clearPrivate]);
+  }, [clearPrivate, resetPrivate]);
   useEffect(() => {
     configureAuthorization(
+      // The full Authorization header value, or null when signed out.
       async () => {
+        if (devAuthEnabled()) {
+          const handle = devHandle();
+          return handle ? `Dev ${handle}` : null;
+        }
         if (!authConfigured()) return null;
         const user = await getAuthManager().getUser();
-        return user && !user.expired ? user.access_token : null;
+        return user && !user.expired && user.access_token
+          ? `Bearer ${user.access_token}`
+          : null;
       },
       () => {
         clearPrivate();
+        if (devAuthEnabled()) {
+          clearDevHandle();
+          // During an explicit sign-in the login form reports the failure.
+          if (signingInDev.current) return;
+        } else if (authConfigured()) void getAuthManager().removeUser();
         notify("Your session has ended. Sign in to continue.");
-        void getAuthManager().removeUser();
       },
     );
     queueMicrotask(() => {
@@ -258,7 +328,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       void refresh("facilities");
       void loadIdentity();
     });
-    if (localUI || !authConfigured()) return;
+    if (localUI || devAuthEnabled() || !authConfigured()) return;
     let manager: ReturnType<typeof getAuthManager>;
     try {
       manager = getAuthManager();
@@ -323,6 +393,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setPending([...locks.current]);
     }
   }
+  const replacePet = (id: string, update: (p: Pet) => Pet) =>
+    setState((s) => ({
+      ...s,
+      pets: s.pets.map((p) => (p.id === id ? update(p) : p)),
+    }));
+  const setRecords = (petId: string, records: HealthRecord[]) =>
+    replacePet(petId, (p) => ({ ...p, records }));
   const actions: Context["actions"] = {
     createPet: (input) =>
       perform("pet:create", async (guard) => {
@@ -332,12 +409,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         notify("Pet passport created.");
         return p.id;
       }),
+    updatePet: (id, input) =>
+      perform(`pet:${id}`, async (guard) => {
+        const row = await services.updatePet(id, input);
+        guard();
+        replacePet(id, (p) => ({ ...row, records: p.records }));
+        notify("Pet passport updated.");
+      }),
+    deletePet: (id) =>
+      perform(`pet:${id}`, async (guard) => {
+        await services.deletePet(id);
+        guard();
+        photoCache.forget(id);
+        await Promise.all([refresh("pets"), refresh("reminders")]);
+        notify("Pet passport deleted.");
+      }),
+    uploadPetPhoto: (id, file) =>
+      perform(`pet-photo:${id}`, async (guard) => {
+        const row = await services.uploadPetPhoto(id, file);
+        guard();
+        replacePet(id, (p) => ({ ...row, records: p.records }));
+        notify("Photo updated.");
+      }),
+    removePetPhoto: (id) =>
+      perform(`pet-photo:${id}`, async (guard) => {
+        await services.removePetPhoto(id);
+        guard();
+        photoCache.forget(id);
+        replacePet(id, (p) => ({ ...p, photo_url: null, photo_version: null }));
+        notify("Photo removed.");
+      }),
     addRecord: (id, input) =>
       perform(`record:${id}`, async (guard) => {
         await services.addRecord(id, input);
         guard();
-        await Promise.all([refresh("pets"), refresh("reminders")]);
+        // The backend never creates reminders from a record, so only this
+        // pet's records need reloading.
+        const records = await services.records(id);
+        guard();
+        setRecords(id, records);
         notify("Care record saved.");
+      }),
+    updateRecord: (petId, recordId, input) =>
+      perform(`record:${petId}:${recordId}`, async (guard) => {
+        await services.updateRecord(petId, recordId, input);
+        guard();
+        const records = await services.records(petId);
+        guard();
+        setRecords(petId, records);
+        notify("Care record updated.");
+      }),
+    deleteRecord: (petId, recordId) =>
+      perform(`record:${petId}:${recordId}`, async (guard) => {
+        await services.deleteRecord(petId, recordId);
+        guard();
+        const records = await services.records(petId);
+        guard();
+        setRecords(petId, records);
+        await refresh("reminders");
+        notify("Care record deleted.");
       }),
     createReminder: (input) =>
       perform("reminder:create", async (guard) => {
@@ -351,6 +481,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await services.setReminder(id, done);
         guard();
         await refresh("reminders");
+      }),
+    updateReminder: (id, input) =>
+      perform(`reminder:${id}`, async (guard) => {
+        await services.updateReminder(id, input);
+        guard();
+        await refresh("reminders");
+        notify("Reminder updated.");
+      }),
+    deleteReminder: (id) =>
+      perform(`reminder:${id}`, async (guard) => {
+        await services.deleteReminder(id);
+        guard();
+        await refresh("reminders");
+        notify("Reminder deleted.");
       }),
     addCart: (id) =>
       perform(`cart:${id}`, async (guard) => {
@@ -414,7 +558,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         notify,
         signOut: async () => {
           clearPrivate();
+          if (devAuthEnabled()) {
+            clearDevHandle();
+            return;
+          }
           await endSession();
+        },
+        signInDev: async (handle) => {
+          signingInDev.current = true;
+          try {
+            // Switching users in the same tab skips clearPrivate().
+            photoCache.clear();
+            setDevHandle(handle);
+            const status = await loadIdentity();
+            if (status !== "signed-in")
+              throw new Error("Development sign-in failed. Please try again.");
+          } finally {
+            signingInDev.current = false;
+          }
         },
         retryAuth: () => {
           void loadIdentity();

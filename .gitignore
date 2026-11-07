@@ -16,3 +16,6 @@ backend/db.sqlite3
 
 # AI Files to ignore
 CLAUDE.local.md
+
+# Local pet files (local storage backend)
+backend/.local-storage/
