@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: petstop
       POSTGRES_PASSWORD: petstop # local only
     ports:
-      - "5432:5432" # use "5433:5432" if 5432 is taken
+      - "127.0.0.1:${PETSTOP_DB_PORT:-5432}:5432" # set PETSTOP_DB_PORT (shell or root .env) if 5432 is taken
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

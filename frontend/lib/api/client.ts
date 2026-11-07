@@ -17,7 +17,10 @@ export class ApiError extends Error {
 }
 type Options = {
   baseUrl?: string;
+  /** Returns an access token; it is sent as `Bearer <token>`. */
   getToken?: () => Promise<string | null>;
+  /** Returns the full Authorization header value; takes precedence over getToken. */
+  getAuthorization?: () => Promise<string | null>;
   onUnauthorized?: () => void;
   fetcher?: typeof fetch;
 };
@@ -69,8 +72,12 @@ export function createApiClient(options: Options) {
     headers.set("Accept", "application/json");
     if (json !== undefined) headers.set("Content-Type", "application/json");
     if (auth) {
-      const token = await options.getToken?.();
-      if (!token) {
+      const authorization = options.getAuthorization
+        ? await options.getAuthorization()
+        : await options
+            .getToken?.()
+            .then((token) => (token ? `Bearer ${token}` : null));
+      if (!authorization) {
         options.onUnauthorized?.();
         throw new ApiError(
           401,
@@ -78,7 +85,7 @@ export function createApiClient(options: Options) {
           "Sign in to continue.",
         );
       }
-      headers.set("Authorization", `Bearer ${token}`);
+      headers.set("Authorization", authorization);
     }
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -172,18 +179,23 @@ export function createApiClient(options: Options) {
   }
   return { request, list };
 }
-let getToken: () => Promise<string | null> = async () => null;
+let authorization: () => Promise<string | null> = async () => null;
 let unauthorized = () => {};
+/**
+ * `provider` returns the full Authorization header value (for example
+ * `Bearer <token>`, or `Dev <handle>` in local development), or null when
+ * signed out.
+ */
 export function configureAuthorization(
-  tokenProvider: typeof getToken,
+  provider: typeof authorization,
   onUnauthorized: () => void,
 ) {
-  getToken = tokenProvider;
+  authorization = provider;
   unauthorized = onUnauthorized;
 }
 export const api = createApiClient({
   baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
-  getToken: () => getToken(),
+  getAuthorization: () => authorization(),
   onUnauthorized: () => unauthorized(),
 });
 // Signed object-storage URLs are never sent an application Authorization header.

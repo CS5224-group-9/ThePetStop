@@ -6,3 +6,5 @@
 db.sqlite3
 Dockerfile
 .dockerignore
+# Local pet files (local storage backend); never ship them in the image
+.local-storage

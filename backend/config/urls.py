@@ -18,10 +18,15 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from api.local_files import local_file_urlpatterns
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/", include("api.urls")),
     path("api/v1/", include("accounts.urls")),
+    path("api/v1/", include("pets.urls")),
     path("api/v1/", include("marketplace.urls")),
     path("api/v1/", include("facilities.urls")),
+    # Signed local file URLs; mounted only with the local storage backend
+    *local_file_urlpatterns(),
 ]
