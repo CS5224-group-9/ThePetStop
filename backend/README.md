@@ -325,3 +325,10 @@ See [the operations runbook](../docs/facility-ingestion-operations.md) for the
 isolated Floci suite, recovery commands, configuration and AWS release gate.
 
 An existing token alone works until rejected. On rejection, the server obtains a new token using the configured email/password and retries the search once. The replacement is reused in memory; `.env` is never rewritten. After a process restart, the configured starting token is tried again. With no renewal credentials, replace the token manually and restart Django. Generated tokens with a known expired timestamp are renewed before the next search; no scheduled refresh job is required.
+
+
+## AWS interactive location search
+
+`facilities.search_handler.handler` handles HTTP API v2 events outside the VPC without initializing Django or a database connection. It reuses `facilities.onemap.OneMapClient` with injected credentials read from `ONEMAP_SECRET_ARN`. The local Django endpoint continues to use `ONEMAP_EMAIL`, `ONEMAP_PASSWORD`, and optional `ONEMAP_ACCESS_TOKEN` from `.env`.
+
+Run the standalone handler tests with `uv run python -m unittest facilities.test_search_handler`; they require no database or Django settings. Existing OneMap tests remain in `facilities.tests.OneMapTests`. See `../infra/README.md` for deployment, the separate search secret, gateway throttling, and signed-out verification.
