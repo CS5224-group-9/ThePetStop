@@ -166,6 +166,14 @@ test('public location search uses a separate internet Lambda with only its secre
   });
 });
 
+test('stage throttling waits for the location search route to exist', () => {
+  const [routeId] = Object.entries(t.api.findResources('AWS::ApiGatewayV2::Route')).find(
+    ([, route]) => route.Properties.RouteKey === 'GET /api/v1/locations/{proxy+}',
+  )!;
+  const stage = Object.values(t.api.findResources('AWS::ApiGatewayV2::Stage'))[0];
+  expect(stage.DependsOn).toContain(routeId);
+});
+
 test('only the API function can read and write pet files, by object, without listing', () => {
   interface Statement {
     Action: string | string[];
