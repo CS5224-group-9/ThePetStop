@@ -2,7 +2,7 @@
 
 A web app for pet owners in Singapore, built as a CS5224 group project. The MVP covers verified discovery of AVS-licensed vets and pet shops, pet profiles with health records and reminders, and a multi-merchant marketplace with simulated checkout.
 
-The project is at the scaffolding stage: the backend foundation (settings, PostgreSQL, user model, `/health/` and `/me/`) is in place, but no feature is implemented yet.
+The backend foundation (settings, PostgreSQL, user model, `/health/` and `/me/`) is in place. Pet profiles and the marketplace catalogue are implemented; see [docs/architecture.md](docs/architecture.md) for the current state.
 
 ## Layout
 
@@ -23,6 +23,8 @@ Database, from the repository root (needs Docker Desktop running):
 ```powershell
 docker compose up -d
 ```
+
+PostgreSQL listens on `127.0.0.1:5432`. If that port is taken, set `PETSTOP_DB_PORT` in the shell or in a root `.env` (see [.env.example](.env.example)) and use the same port in `backend/.env` `DATABASE_URL`.
 
 To run Floci with PostgreSQL for local facility-ingestion work, include the
 optional Compose overlay:
@@ -46,6 +48,13 @@ $env:AWS_SECRET_ACCESS_KEY = "test"
 $env:AWS_DEFAULT_REGION = "ap-southeast-1"
 aws --endpoint-url http://localhost:4566 s3api list-buckets
 ```
+
+These are dummy credentials for Floci. Local AWS SDK clients also need an
+endpoint pointing to Floci, such as `AWS_ENDPOINT_URL=http://localhost:4566`
+for clients that support it; check each feature's configuration. The facility
+ingestion scripts supply their own local endpoint and credentials. Before using
+real AWS, remove the dummy credentials and any Floci endpoint from the session
+and `backend/.env` so the intended AWS profile or role can be used.
 
 Inside Floci-launched Lambda containers, use `http://floci:4566` for AWS API
 calls and `db:5432` for PostgreSQL. `localhost` inside a Lambda container points
@@ -134,8 +143,11 @@ Backend, from `backend/`. The first time, create `.env` as described in [backend
 ```powershell
 uv sync
 uv run python .\manage.py migrate
+uv run python .\manage.py seed_pets
 uv run python .\manage.py runserver
 ```
+
+`seed_pets` adds demo pets, records and reminders for the local dev users. For the offline dev sign-in, or to sign in through the real Cognito pool, follow [Run pet profiles locally](backend/README.md#run-pet-profiles-locally).
 
 Frontend, from `frontend/`:
 

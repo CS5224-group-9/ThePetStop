@@ -6,13 +6,39 @@ import { useEffect, useRef, useState } from "react";
 import { useApp } from "./app-provider";
 import { Icon } from "./ui";
 import { authConfigured, finishSignIn, signIn } from "@/lib/auth/cognito";
+import {
+  DEV_USERS,
+  devAuthEnabled,
+  devHandle,
+  useDevAuthEnabled,
+} from "@/lib/auth/dev";
 import { nextPath } from "@/lib/format";
 import { FormError } from "./resource-state";
+function LoginStory() {
+  return (
+    <section className="login-story">
+      <Icon name="medical" size={44} />
+      <span className="eyebrow">PETSTOP SG / ACCOUNT ACCESS</span>
+      <h1>
+        A single workspace
+        <br />
+        for pet care.
+      </h1>
+      <p>
+        Manage pet profiles, review care records and find supplies across
+        Singapore’s pet marketplace.
+      </p>
+      <small>PetStop SG · Singapore pet care workspace</small>
+    </section>
+  );
+}
 export function Login() {
-  const { state } = useApp();
+  const { state, signInDev } = useApp();
   const params = useSearchParams();
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const devAuth = useDevAuthEnabled();
   if (localUI)
     return (
       <div className="auth-card">
@@ -28,22 +54,83 @@ export function Login() {
         </Link>
       </div>
     );
+  if (devAuth === null)
+    // Dev sign-in is built in, but the hostname is unknown until hydration.
+    return (
+      <div className="login-layout">
+        <LoginStory />
+        <section className="login-form">
+          <p role="status">Loading sign-in…</p>
+        </section>
+      </div>
+    );
+  if (devAuth) {
+    // LOCAL DEVELOPMENT ONLY: devAuth needs NEXT_PUBLIC_DEV_AUTH=true,
+    // API mode and a localhost/127.0.0.1 hostname.
+    const current = state.role ? devHandle() : null;
+    return (
+      <div className="login-layout">
+        <LoginStory />
+        <section className="login-form">
+          <span className="eyebrow">LOCAL DEVELOPMENT</span>
+          <h2>Choose a development user</h2>
+          <p>
+            Development sign-in for this computer only. It is unavailable on
+            deployed sites and uses seeded sample data.
+          </p>
+          <FormError message={error} />
+          <div className="dev-login-list">
+            {DEV_USERS.map((user) => (
+              <button
+                className="button secondary"
+                key={user.handle}
+                disabled={busy}
+                onClick={async () => {
+                  setError("");
+                  setBusy(true);
+                  try {
+                    await signInDev(user.handle);
+                    router.replace(nextPath(params.get("next"), "/"));
+                  } catch (cause) {
+                    setError(
+                      cause instanceof Error
+                        ? cause.message
+                        : "Development sign-in failed. Please try again.",
+                    );
+                    setBusy(false);
+                  }
+                }}
+              >
+                <span>
+                  {current === user.handle
+                    ? `Signed in as ${user.name}`
+                    : `Sign in as ${user.name}`}
+                  <small>{user.description}</small>
+                </span>
+                {current === user.handle ? (
+                  <Icon name="check" size={18} />
+                ) : (
+                  <Icon name="arrow" size={18} />
+                )}
+              </button>
+            ))}
+          </div>
+          {state.role && (
+            <Link
+              className="text-link"
+              href={nextPath(params.get("next"), "/")}
+            >
+              Continue to workspace
+              <Icon name="arrow" size={16} />
+            </Link>
+          )}
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="login-layout">
-      <section className="login-story">
-        <Icon name="medical" size={44} />
-        <span className="eyebrow">PETSTOP SG / ACCOUNT ACCESS</span>
-        <h1>
-          A single workspace
-          <br />
-          for pet care.
-        </h1>
-        <p>
-          Manage pet profiles, review care records and find supplies across
-          Singapore’s pet marketplace.
-        </p>
-        <small>PetStop SG · Singapore pet care workspace</small>
-      </section>
+      <LoginStory />
       <section className="login-form">
         <span className="eyebrow">WELCOME TO PETSTOP SG</span>
         <h2>{state.role ? "You’re signed in" : "Sign in to your account"}</h2>
@@ -100,7 +187,7 @@ export function AuthCallback() {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    if (localUI) {
+    if (localUI || devAuthEnabled()) {
       router.replace("/");
       return;
     }

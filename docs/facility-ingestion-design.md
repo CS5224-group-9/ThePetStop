@@ -253,7 +253,7 @@ Rows without coordinates remain available in unbounded directory browsing but ha
 
 Follow the phased [implementation plan and local Floci runbook](facility-ingestion-implementation-plan.md) for proposed files, bootstrap resources, commands and rollout gates.
 
-Both AWS CDK and the Floci bootstrap must configure separate `ready/` and `status/` notification filters on the load function. Add the audit models/migrations and staff admin alongside facility models. The load function writes audit rows directly, so it does not need S3 write permission; fetch writes status artifacts and performs notification reconciliation without database credentials.
+Both AWS CDK and the Floci bootstrap must configure separate `ready/` and `status/` notification filters on the load function. Add the audit models/migrations and staff admin alongside facility models. The load function writes audit rows to the database and its receipts and failure markers (`loaded/`, `projected/`, `status/`, `failed/`, `quarantine/`) to S3; fetch writes status artifacts and performs notification reconciliation without database credentials.
 
 Status acceptance checks cover discovery failure before parsing, batch progress, 429 cooldown, duplicate/out-of-order status delivery, load rollback followed by retry success, missing terminal events after timeout, database-outage recovery and staff-only diagnostics. Assert successful status and facility changes commit together, delayed fetch events cannot regress load results, and replaying audit events never repeats facility mutations.
 

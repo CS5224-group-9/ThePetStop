@@ -361,11 +361,6 @@ def main():
                 MaximumEventAgeInSeconds=3600,
                 DestinationConfig={"OnFailure": {"Destination": failure_arn}},
             )
-        if stage in {"reconcile", "load"}:
-            lambdas.put_function_concurrency(
-                FunctionName=name,
-                ReservedConcurrentExecutions=2 if stage == "load" else 1,
-            )
 
     mappings = lambdas.list_event_source_mappings(
         FunctionName=FUNCTIONS["geocode"][0], EventSourceArn=queue_arn

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useApp } from "./app-provider";
-import { Badge, Icon, PageHeading, PetAvatar } from "./ui";
+import { Badge, Icon, PageHeading, PetAvatar, ReminderBadge } from "./ui";
 import { displayDate, todaySG } from "@/lib/format";
 import { ResourceState } from "./resource-state";
 export function Dashboard() {
@@ -56,7 +56,7 @@ export function Dashboard() {
   const reminders = data.reminders
     .filter((r) => !r.done)
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
-  const overdue = reminders.filter((r) => r.due_date < todaySG());
+  const overdue = reminders.filter((r) => r.is_overdue);
   return (
     <>
       <PageHeading
@@ -136,47 +136,59 @@ export function Dashboard() {
           </div>
           <ResourceState domain="pets">
             <div className="dashboard-pets">
-              {data.pets.slice(0, 3).map((pet) => (
-                <Link
-                  className="dossier-card"
-                  key={pet.id}
-                  href={`/pets/detail/?id=${pet.id}`}
-                >
-                  <div className="dossier-identity">
-                    <PetAvatar
-                      species={pet.species}
-                      photoUrl={pet.photo_url}
-                      large
-                    />
-                    <div>
-                      <Badge tone="neutral">
-                        {pet.species} · Personal profile
-                      </Badge>
-                      <h3>{pet.name}</h3>
-                      <p>{pet.breed}</p>
-                      <span className="dossier-chip">
-                        Microchip{" "}
-                        <strong>{pet.microchip || "Not recorded"}</strong>
-                      </span>
+              {data.pets.slice(0, 3).map((pet) => {
+                const petOverdue = overdue.filter(
+                  (r) => r.pet_id === pet.id,
+                ).length;
+                return (
+                  <Link
+                    className="dossier-card"
+                    key={pet.id}
+                    href={`/pets/detail/?id=${encodeURIComponent(pet.id)}`}
+                  >
+                    <div className="dossier-identity">
+                      <PetAvatar
+                        species={pet.species}
+                        petId={pet.id}
+                        photoUrl={pet.photo_url}
+                        photoVersion={pet.photo_version}
+                        large
+                      />
+                      <div>
+                        <span className="dossier-badges">
+                          <Badge tone="neutral">
+                            {pet.species} · Personal profile
+                          </Badge>
+                          {petOverdue > 0 && (
+                            <Badge tone="rose">{petOverdue} overdue</Badge>
+                          )}
+                        </span>
+                        <h3>{pet.name}</h3>
+                        <p>{pet.breed}</p>
+                        <span className="dossier-chip">
+                          Microchip{" "}
+                          <strong>{pet.microchip || "Not recorded"}</strong>
+                        </span>
+                      </div>
+                      <Icon name="arrow" size={19} />
                     </div>
-                    <Icon name="arrow" size={19} />
-                  </div>
-                  <div className="dossier-fields">
-                    <div>
-                      <span>SEX</span>
-                      <strong>{pet.sex}</strong>
+                    <div className="dossier-fields">
+                      <div>
+                        <span>SEX</span>
+                        <strong>{pet.sex}</strong>
+                      </div>
+                      <div>
+                        <span>WEIGHT</span>
+                        <strong>{pet.weight}</strong>
+                      </div>
+                      <div>
+                        <span>CARE RECORDS</span>
+                        <strong>{pet.records.length} recorded</strong>
+                      </div>
                     </div>
-                    <div>
-                      <span>WEIGHT</span>
-                      <strong>{pet.weight}</strong>
-                    </div>
-                    <div>
-                      <span>CARE RECORDS</span>
-                      <strong>{pet.records.length} recorded</strong>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           </ResourceState>
           <Link className="add-pet-link" href="/pets/new/">
@@ -204,7 +216,7 @@ export function Dashboard() {
                   key={r.id}
                 >
                   <span
-                    className={`reminder-dot ${r.due_date < todaySG() ? "overdue" : ""}`}
+                    className={`reminder-dot ${r.is_overdue ? "overdue" : ""}`}
                   >
                     <Icon name="calendar" size={19} />
                   </span>
@@ -214,9 +226,7 @@ export function Dashboard() {
                       {data.pets.find((p) => p.id === r.pet_id)?.name} ·{" "}
                       {displayDate(r.due_date)}
                     </p>
-                    <Badge tone={r.due_date < todaySG() ? "rose" : "green"}>
-                      {r.due_date < todaySG() ? "Overdue" : "Upcoming"}
-                    </Badge>
+                    <ReminderBadge reminder={r} upcomingTone="green" />
                   </div>
                 </Link>
               ))}

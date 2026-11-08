@@ -76,8 +76,6 @@ export class FacilityIngestionStack extends cdk.Stack {
         memorySize: 1024,
         timeout: cdk.Duration.seconds(['fetch', 'reconcile'].includes(stage) ? 180 : 120),
         environment: { ...common, ...environment },
-        reservedConcurrentExecutions:
-          stage === 'load' ? 2 : ['geocode', 'reconcile'].includes(stage) ? 1 : undefined,
         logGroup: twoWeekLogGroup(this, `${stage}Logs`),
         ...(inVpc
           ? {
@@ -187,10 +185,22 @@ export class FacilityIngestionStack extends cdk.Stack {
       ['cache', 'coordination', 'results', 'ready', 'status', 'failed', 'quarantine'],
       true,
     );
+    geocode.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:ListBucket'],
+        resources: [bucket.bucketArn],
+      }),
+    );
     oneMap.grantRead(geocode);
     geocode.addEventSource(new sources.SqsEventSource(work, { batchSize: 1 }));
     allow(load, ['status', 'ready', 'approvals'], false);
     allow(load, ['loaded', 'projected', 'status', 'failed', 'quarantine'], true);
+    load.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:ListBucket'],
+        resources: [bucket.bucketArn],
+      }),
+    );
     props.data.database.secret!.grantRead(load);
     props.data.djangoSecretKey.grantRead(load);
     allow(failure, ['status', 'failed', 'invocation-failures'], true);
@@ -258,31 +268,7 @@ export class FacilityIngestionStack extends cdk.Stack {
       });
       item.addAlarmAction(new actions.SnsAction(alerts));
     };
-    for (const [name, queue] of [
-      ['WorkDlq', workDlq],
-      ['InvocationFailures', failures],
-      ['FailureCaptureDlq', captureDlq],
-    ] as const) {
-      alarm(`${name}NotEmpty`, queue.metricApproximateNumberOfMessagesVisible());
-    }
-    alarm('OldQueuedWork', work.metricApproximateAgeOfOldestMessage(), 1800);
-    alarm(
-      'QuarantinedMessages',
-      new cloudwatch.Metric({
-        namespace: 'PetStop/FacilityIngestion',
-        metricName: 'QuarantinedMessages',
-        statistic: 'Sum',
-      }),
-    );
-    for (const [name, fn] of [
-      ['Fetch', fetch],
-      ['Geocode', geocode],
-      ['Load', load],
-      ['Reconcile', reconcile],
-      ['Failure', failure],
-    ] as const) {
-      alarm(`${name}Errors`, fn.metricErrors({ statistic: 'Sum' }));
-    }
+    alarm('FailureCaptureDlqNotEmpty', captureDlq.metricApproximateNumberOfMessagesVisible());
     for (const source of ['vet', 'pet_shop']) {
       alarm(
         `${source}RunFailures`,
@@ -303,7 +289,9 @@ export class FacilityIngestionStack extends cdk.Stack {
           period: cdk.Duration.minutes(30),
         }),
         192,
-        cloudwatch.TreatMissingData.BREACHING,
+        props.enableSchedules
+          ? cloudwatch.TreatMissingData.BREACHING
+          : cloudwatch.TreatMissingData.NOT_BREACHING,
       );
     }
     new cloudwatch.Dashboard(this, 'Dashboard', {

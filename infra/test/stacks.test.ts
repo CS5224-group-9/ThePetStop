@@ -55,6 +55,32 @@ test('every bucket blocks public access', () => {
   }
 });
 
+test('PetFiles bucket expires old versions and aborts incomplete uploads', () => {
+  t.storage.hasResourceProperties('AWS::S3::Bucket', {
+    VersioningConfiguration: { Status: 'Enabled' },
+    LifecycleConfiguration: {
+      Rules: Match.arrayWith([
+        Match.objectLike({
+          Status: 'Enabled',
+          NoncurrentVersionExpiration: { NoncurrentDays: 7 },
+          ExpiredObjectDeleteMarker: true,
+          AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
+        }),
+      ]),
+    },
+  });
+  const petFiles = Object.values(
+    t.storage.findResources('AWS::S3::Bucket', {
+      Properties: { LifecycleConfiguration: Match.anyValue() },
+    }),
+  );
+  expect(petFiles).toHaveLength(1);
+  expect(petFiles[0].Properties.VersioningConfiguration).toEqual({ Status: 'Enabled' });
+  expect(petFiles[0].Properties.CorsConfiguration.CorsRules[0].AllowedHeaders).toEqual([
+    'content-type',
+  ]);
+});
+
 test('Cognito client is public with code flow and has both groups', () => {
   t.auth.hasResourceProperties('AWS::Cognito::UserPoolClient', {
     GenerateSecret: false,
@@ -80,6 +106,13 @@ test('catch-all route requires a JWT; health and preflights are public', () => {
     .filter((r) => r.Properties.AuthorizationType === 'JWT')
     .map((r) => r.Properties.RouteKey);
   expect(protectedRoutes).toEqual(['$default']);
+  // Pet routes have no public route; they stay behind the $default JWT route
+  const routeKeys = Object.values(t.api.findResources('AWS::ApiGatewayV2::Route')).map(
+    (r) => r.Properties.RouteKey as string,
+  );
+  for (const routeKey of routeKeys) {
+    expect(routeKey).not.toMatch(/pets|reminders/);
+  }
 });
 
 test('API Lambdas run in the VPC with 14-day logs', () => {
@@ -88,4 +121,44 @@ test('API Lambdas run in the VPC with 14-day logs', () => {
     VpcConfig: Match.objectLike({ SubnetIds: Match.anyValue() }),
   });
   t.api.allResourcesProperties('AWS::Logs::LogGroup', { RetentionInDays: 14 });
+});
+
+test('both Lambdas get the pet files bucket name', () => {
+  t.api.allResourcesProperties('AWS::Lambda::Function', {
+    Environment: { Variables: Match.objectLike({ PET_FILES_BUCKET: Match.anyValue() }) },
+  });
+});
+
+test('only the API function can read and write pet files, by object, without listing', () => {
+  interface Statement {
+    Action: string | string[];
+    Resource: unknown;
+  }
+  const actionsOf = (s: Statement) => (Array.isArray(s.Action) ? s.Action : [s.Action]);
+  const policies = Object.values(t.api.findResources('AWS::IAM::Policy'));
+  const statements = policies.flatMap((p) =>
+    (p.Properties.PolicyDocument.Statement as Statement[]).map((statement) => ({
+      statement,
+      roles: p.Properties.Roles as unknown[],
+    })),
+  );
+
+  const s3Statements = statements.filter(({ statement }) =>
+    actionsOf(statement).some((a) => a.startsWith('s3:')),
+  );
+  expect(s3Statements).toHaveLength(1);
+  const [{ statement, roles }] = s3Statements;
+  expect([...actionsOf(statement)].sort()).toEqual([
+    's3:DeleteObject',
+    's3:GetObject',
+    's3:PutObject',
+  ]);
+  expect(JSON.stringify(statement.Resource)).toContain('/pets/*');
+  expect(roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
+
+  for (const { statement: s } of statements) {
+    for (const action of actionsOf(s)) {
+      expect(action).not.toMatch(/^s3:(List|GetBucket|\*$)/);
+    }
+  }
 });
