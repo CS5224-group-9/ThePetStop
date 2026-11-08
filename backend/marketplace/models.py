@@ -145,7 +145,18 @@ class Order(models.Model):
     shipping_postal_code = models.CharField(max_length=12)
     payment_ref = models.CharField(max_length=80, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+    # Client-generated Idempotency-Key header; a retried checkout returns this order
+    idempotency_key = models.CharField(max_length=80, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "idempotency_key"],
+                condition=~models.Q(idempotency_key=""),
+                name="marketplace_order_user_idempotency_uniq",
+            )
+        ]
 
     def __str__(self):
         return f"Order {self.pk} ({self.status})"

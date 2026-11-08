@@ -80,7 +80,7 @@ Known gaps: deleting a `User` deletes its pets in bulk without deleting their fi
 | `ProductGroup` | `canonical_name` | Links the same product sold by different shops, for price comparison |
 | `Product` | `merchant` → Merchant, `category` → Category, `group` → ProductGroup (nullable), `name`, `description`, `price_cents`, `stock`, `image_key`, `product_type` (product, service), `duration_minutes` (nullable, services only), `active`, `created_at`, `updated_at` | Merchants edit their own products only |
 | `CartItem` | `user` → User, `product` → Product, `quantity` | Unique on (`user`, `product`). The cart is the set of a user's items, grouped by merchant when read. |
-| `Order` | `user` → User, `status` (pending_payment, paid, cancelled), `total_cents`, shipping name, phone, address and postal code, `payment_ref` (simulated, for example `SIM-…`), `paid_at`, `created_at` | One per checkout |
+| `Order` | `user` → User, `status` (pending_payment, paid, cancelled), `total_cents`, shipping name, phone, address and postal code, `payment_ref` (simulated, for example `SIM-…`), `paid_at`, `idempotency_key`, `created_at` | One per checkout. `idempotency_key` is the client's `Idempotency-Key` header, unique per user when not blank; a retry with a used key returns that order |
 | `MerchantOrder` | `order` → Order, `merchant` → Merchant, `subtotal_cents`, `status` (paid, processing, shipped, delivered, cancelled), `updated_at` | One per merchant in an order. Merchants see and update only their own. |
 | `OrderItem` | `merchant_order` → MerchantOrder, `product` → Product (protected), `product_name`, `unit_price_cents`, `quantity` | Name and price are copied at checkout, so later edits do not change history |
 
@@ -105,7 +105,7 @@ Required by the MVP brief: fictional shops only, no real brands or businesses pr
 - **30–40 product groups** shared by two or more shops at different prices, so "also sold by" shows real comparisons.
 - Product names may be generic, such as "Grain-free salmon dry cat food, 2 kg". Avoid real trademarks.
 
-D2 and D3 split the seed work. D2 has committed three fictional shops with 24 products each (72 rows) and 24 shared product groups; D3 adds shops 4 through 6 and can add further groups to reach the final target of 30 to 40. D2 owns the shared files and the catalogue migrations. File layout, so the two do not edit the same file:
+D2 and D3 split the seed work. D2 has committed three fictional shops with 24 products each (72 rows) and 24 shared product groups; D3 has added shops 4 through 6 (`shop-4.json` to `shop-6.json`, the same 24 groups at their own prices) and can add further groups to reach the final target of 30 to 40. D2 owns the shared files and the catalogue migrations. File layout, so the two do not edit the same file:
 
 ```text
 backend/marketplace/fixtures/catalogue/

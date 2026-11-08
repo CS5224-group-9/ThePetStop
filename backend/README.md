@@ -293,7 +293,7 @@ Load the committed fictional catalogue fixtures after applying migrations:
 uv run python .\manage.py load_catalogue
 ```
 
-The command is idempotent. D2's three fixtures contain 24 products per shop; D3 can add shops 4–6 in additional shop-N.json files.
+The command is idempotent. The six fictional shops (`shop-1.json` to `shop-6.json`) have 24 products each, all in the same 24 comparison groups.
 
 ### OneMap location search (local development)
 

@@ -2,7 +2,7 @@
 
 ## Standalone frontend UI
 
-The frontend defaults to `NEXT_PUBLIC_DATA_SOURCE=local` for sample pets, fictional merchant catalogues, care records/reminders, browser-persisted cart and simulated orders, merchant editing and storefront pages. Facility listings and location search use the public Django API in both modes; there are no sample facilities or fallback listings. Configure `NEXT_PUBLIC_API_BASE_URL` and run Django to use the directory. Set `NEXT_PUBLIC_DATA_SOURCE=api` to use the API/Cognito boundary described below; public marketplace, facility listing and pet profile APIs are implemented, while other feature endpoints remain outstanding. Local mode does not replace API authorization or implement AWS services.
+The frontend defaults to `NEXT_PUBLIC_DATA_SOURCE=local` for sample pets, fictional merchant catalogues, care records/reminders, browser-persisted cart and simulated orders, merchant editing and storefront pages. Facility listings and location search use the public Django API in both modes; there are no sample facilities or fallback listings. Configure `NEXT_PUBLIC_API_BASE_URL` and run Django to use the directory. Set `NEXT_PUBLIC_DATA_SOURCE=api` to use the API/Cognito boundary described below; public marketplace, cart, checkout, order history, facility listing and pet profile APIs are implemented, while other feature endpoints remain outstanding. Local mode does not replace API authorization or implement AWS services.
 
 Updated 2026-10-31. Scope: production-oriented frontend, with backend/infrastructure implemented separately. The data source is chosen at build time; API mode never falls back to sample data.
 
@@ -34,7 +34,7 @@ API mode can be tested offline without Cognito through a development sign-in tha
 
 ## Contract status
 
-Routes, ownership rules, pagination and integer-cent conventions follow `repository-structure.md`. The public marketplace catalogue, facility listing and pet profile endpoints (pets, photos, records, documents and reminders) are implemented in Django. The pet contract is [openapi/pets.yaml](openapi/pets.yaml), which wins over the summary below. Cart, checkout, order and merchant-write endpoints remain unimplemented. The catalogue wire shapes below should be checked against the serializers; the remaining wire shapes are **an explicit integration proposal**, derived from the draft data model, not generated backend types. Do not declare the complete application production-ready from frontend checks alone.
+Routes, ownership rules, pagination and integer-cent conventions follow `repository-structure.md`. The public marketplace catalogue, facility listing and pet profile endpoints (pets, photos, records, documents and reminders) are implemented in Django. The cart, checkout and order history endpoints are implemented too. The pet contract is [openapi/pets.yaml](openapi/pets.yaml) and the cart, checkout and orders contract is [openapi/marketplace-orders.yaml](openapi/marketplace-orders.yaml); both win over the summaries below. Merchant-write endpoints remain unimplemented. The catalogue wire shapes below should be checked against the serializers; the remaining wire shapes are **an explicit integration proposal**, derived from the draft data model, not generated backend types. Do not declare the complete application production-ready from frontend checks alone.
 
 All lists return `{count, next, previous, results}`. `next` must remain on the configured API origin and under the configured base path. IDs may be strings or integers. Errors return `{error:{code,message,details}}`, with 401 for unauthenticated requests, 403 for insufficient role, and 404 for another owner’s private record. API redirects are rejected. Request/response field names are snake_case; amounts and stock are nonnegative integers.
 
@@ -63,6 +63,8 @@ Upload failures: 409 `upload_incomplete` (the object is not stored yet, or a new
 Validation errors are 400 `invalid` with `details` keyed by field. A field's value is normally a list of messages, but errors inside a list field are an object keyed by item index, such as `{"allergies": {"3": ["Ensure this field has no more than 50 characters."]}}`. `lib/form-error.ts` shows the first message with a field label. A foreign or deleted id in a body, such as `health_record`, gets DRF's `Invalid pk "…" - object does not exist.`, shown as "This item is no longer available. Refresh and try again." A write that collides with a concurrent change returns `details.non_field_errors: ["This item changed. Refresh and try again."]`; the frontend shows that message alone.
 
 ### Basket, checkout and orders
+
+Implemented in Django; [openapi/marketplace-orders.yaml](openapi/marketplace-orders.yaml) has the full contract, including error codes (`cart_empty`, `product_unavailable`, `insufficient_stock`) whose messages the checkout page can show as is. Cart writes return the whole cart. A retried checkout with a used key returns the original order with 200.
 
 `GET cart/` returns:
 
