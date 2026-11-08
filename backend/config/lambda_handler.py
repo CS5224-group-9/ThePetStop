@@ -2,7 +2,7 @@
 
 - `api` serves Django behind API Gateway (HTTP API, payload format 2.0).
 - `manage` runs an allow-listed management command, e.g. invoked by the deploy
-  workflow with `{"command": "migrate"}`.
+  workflow with `{"command": "migrate"}` and `{"command": "load_catalogue"}`.
 """
 
 import io
@@ -14,7 +14,7 @@ from config.wsgi import application
 
 api = make_lambda_handler(application)
 
-MANAGE_COMMANDS = {"migrate", "showmigrations", "check"}
+MANAGE_COMMANDS = {"migrate", "showmigrations", "check", "load_catalogue"}
 
 
 def manage(event, context):
