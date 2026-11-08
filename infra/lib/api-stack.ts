@@ -124,13 +124,15 @@ export class ApiStack extends cdk.Stack {
       logGroup: twoWeekLogGroup(this, 'LocationSearchLogs'),
     });
     searchSecret.grantRead(searchFunction);
-    api.addRoutes({
+    const [searchRoute] = api.addRoutes({
       path: '/api/v1/locations/{proxy+}',
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration('LocationSearch', searchFunction),
     });
     // Shared route-level protection across Lambda instances; API Gateway returns 429.
     const stage = api.defaultStage!.node.defaultChild as apigw.CfnStage;
+    // RouteSettings uses a literal key, so CloudFormation cannot infer this dependency.
+    stage.node.addDependency(searchRoute);
     stage.addPropertyOverride('RouteSettings', {
       'GET /api/v1/locations/{proxy+}': {
         ThrottlingBurstLimit: 5,
