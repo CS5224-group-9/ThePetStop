@@ -42,14 +42,14 @@ yarn cdk bootstrap aws://<ACCOUNT_ID>/ap-southeast-1
 
 Defined in `bin/infra.ts`, one file each in `lib/`:
 
-| Stack                                    | Contains                                                                                                                                                                                                                                                                                                                                                                 |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PetStop-Dev-Network`                    | VPC with isolated subnets in two AZs and no NAT gateway; S3 gateway endpoint; Secrets Manager interface endpoint in one AZ; security groups for the app Lambdas and the database                                                                                                                                                                                         |
-| `PetStop-Dev-Data`                       | RDS PostgreSQL 16 `db.t4g.micro` with a generated credentials secret, 7-day backups and deletion protection; the Django secret key. Termination protection is on.                                                                                                                                                                                                        |
-| `PetStop-Dev-Storage`                    | S3 buckets `Web`, `ProductImages` (served at `/product-images/*`) and private, versioned `PetFiles` (a lifecycle rule expires noncurrent versions after 7 days, removes expired delete markers and aborts incomplete multipart uploads after 1 day); CloudFront with OAC and a function that maps `/x/` to `/x/index.html`                                               |
-| `PetStop-Dev-Auth`                       | Cognito user pool with managed login, the public SPA client (code + PKCE), groups `owner` and `merchant`, a trigger that adds `email` to access tokens, and a deploy-time fetch of the pool's public keys                                                                                                                                                                |
-| `PetStop-Dev-Api`                        | The Django image as two Lambdas in the VPC (`ApiFunction` for requests, `ManageFunction` for migrations); both get `PET_FILES_BUCKET`, and only `ApiFunction` may put, get and delete `PetFiles` objects under `pets/*` (object ARNs only, no list access); HTTP API whose catch-all route requires a Cognito JWT, with public `GET` routes for health and the catalogue |
-| `PetStop-Dev-FacilityIngestion` (opt-in) | Five image Lambdas, private versioned S3 artifacts, FIFO work and failure queues, OneMap secret, disabled schedules, dashboard, alarms and recovery-operator policy. Include `-c facilityIngestion=true` to synthesize it.                                                                                                                                               |
+| Stack                                    | Contains                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PetStop-Dev-Network`                    | VPC with isolated subnets in two AZs and no NAT gateway; S3 gateway endpoint; Secrets Manager interface endpoint in one AZ; security groups for the app Lambdas and the database                                                                                                                                                                                                         |
+| `PetStop-Dev-Data`                       | RDS PostgreSQL 16 `db.t4g.micro` with a generated credentials secret, 7-day backups and deletion protection; the Django secret key. Termination protection is on.                                                                                                                                                                                                                        |
+| `PetStop-Dev-Storage`                    | S3 buckets `Web`, `ProductImages` (served at `/product-images/*`) and private, versioned `PetFiles` (a lifecycle rule expires noncurrent versions after 7 days, removes expired delete markers and aborts incomplete multipart uploads after 1 day); CloudFront with OAC and a function that maps `/x/` to `/x/index.html`                                                               |
+| `PetStop-Dev-Auth`                       | Cognito user pool with managed login, the public SPA client (code + PKCE), groups `owner` and `merchant`, a trigger that adds `email` to access tokens, and a deploy-time fetch of the pool's public keys                                                                                                                                                                                |
+| `PetStop-Dev-Api`                        | The Django image as two database-backed Lambdas in the VPC (`ApiFunction` for requests, `ManageFunction` for migrations); both get `PET_FILES_BUCKET`, and only `ApiFunction` may put, get and delete `PetFiles` objects under `pets/*` (object ARNs only, no list access); HTTP API whose catch-all route requires a Cognito JWT, with public `GET` routes for health and the catalogue |
+| `PetStop-Dev-FacilityIngestion` (opt-in) | Five image Lambdas, private versioned S3 artifacts, FIFO work and failure queues, OneMap secret, disabled schedules, dashboard, alarms and recovery-operator policy. Include `-c facilityIngestion=true` to synthesize it.                                                                                                                                                               |
 
 All Lambda logs keep 14 days. Expect roughly US$25–35 a month, mostly RDS and the Secrets Manager endpoint; check the Budgets alarm after the first week.
 
@@ -125,3 +125,26 @@ The same steps from a laptop, for a first deploy or when the workflow is broken.
 5. M0 check: open `<FrontendUrl>`, sign up, sign in, and confirm the app loads your profile from `/me/`.
 
 To give someone merchant access, add their user to the `merchant` group in the Cognito console.
+
+## Deploying interactive location search
+
+The API stack also defines `LocationSearchFunction`, an image Lambda outside the VPC. It handles public `GET /api/v1/locations/search/` requests without starting Django or connecting to RDS. The public gateway route uses `/api/v1/locations/{proxy+}` to handle the trailing slash; the handler rejects all other location paths. The private API and management functions keep their existing network and authentication configuration.
+
+From `infra/`, with Docker running and the team AWS profile selected:
+
+```powershell
+yarn build
+yarn test --runInBand
+yarn cdk diff PetStop-Dev-Api
+yarn cdk deploy PetStop-Dev-Api
+```
+
+This change is also included in the normal main-branch deployment. It does not require the optional ingestion stack. After deployment:
+
+1. Open `PetStop-Dev-Api` outputs and copy `LocationSearchSecretArn`.
+2. Open that secret in Secrets Manager and populate its `email` and `password` fields with a registered OneMap account. It starts with empty fields. This is a separate secret from ingestion; updating `backend/.env` or the ingestion secret does not configure it. Leave `access_token` absent to use automatic account authentication.
+3. The secret cache lasts 60 seconds. After setting or rotating credentials, allow a minute before retrying. No image deployment is required for a secret-value change.
+4. Request `<ApiBaseUrl>locations/search/?q=bukit+batok+mrt` without an Authorization header. Expect 200 with a `results` array; then verify the map in a signed-out browser. Missing/rejected provider credentials return 503, never a session-expired 401. Rapid searches may return 429 because the route has an aggregate, best-effort throttle of 0.5 requests/second and a burst of five.
+5. Confirm `<ApiBaseUrl>me/` still returns 401 without a token. The public search route must not expose private routes.
+
+Use output `LocationSearchFunctionName` to locate its CloudWatch logs. Logs contain safe error codes, not query text, credentials, tokens, or upstream bodies. No live AWS acceptance has been performed by the local implementation checks.

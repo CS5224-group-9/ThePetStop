@@ -7,6 +7,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import { AuthStack } from './auth-stack';
 import { DataStack } from './data-stack';
@@ -106,6 +107,36 @@ export class ApiStack extends cdk.Stack {
     }
 
     const integration = new HttpLambdaIntegration('Django', apiFunction);
+    // Search calls OneMap but never RDS, so it does not inherit shared's VPC config.
+    const searchSecret = new secretsmanager.Secret(this, 'LocationSearchCredentials', {
+      description: 'OneMap email/password for public interactive location search',
+      secretObjectValue: {
+        email: cdk.SecretValue.unsafePlainText(''),
+        password: cdk.SecretValue.unsafePlainText(''),
+      },
+    });
+    const searchFunction = new lambda.DockerImageFunction(this, 'LocationSearchFunction', {
+      architecture: lambda.Architecture.X86_64,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(18),
+      code: image('facilities.search_handler.handler'),
+      environment: { ONEMAP_SECRET_ARN: searchSecret.secretArn },
+      logGroup: twoWeekLogGroup(this, 'LocationSearchLogs'),
+    });
+    searchSecret.grantRead(searchFunction);
+    api.addRoutes({
+      path: '/api/v1/locations/{proxy+}',
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('LocationSearch', searchFunction),
+    });
+    // Shared route-level protection across Lambda instances; API Gateway returns 429.
+    const stage = api.defaultStage!.node.defaultChild as apigw.CfnStage;
+    stage.addPropertyOverride('RouteSettings', {
+      'GET /api/v1/locations/{proxy+}': {
+        ThrottlingBurstLimit: 5,
+        ThrottlingRateLimit: 0.5,
+      },
+    });
     const authorizer = new HttpJwtAuthorizer('Cognito', auth.issuer, {
       // Cognito access tokens carry the app client in client_id, which this checks
       jwtAudience: [auth.client.userPoolClientId],
@@ -131,5 +162,7 @@ export class ApiStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ApiBaseUrl', { value: `https://${apiHost}/api/v1/` });
     new cdk.CfnOutput(this, 'ManageFunctionName', { value: manageFunction.functionName });
+    new cdk.CfnOutput(this, 'LocationSearchFunctionName', { value: searchFunction.functionName });
+    new cdk.CfnOutput(this, 'LocationSearchSecretArn', { value: searchSecret.secretArn });
   }
 }
