@@ -117,7 +117,7 @@ export function Dashboard() {
         <Link className="stat-card" href="/map/">
           <span className="eyebrow">FACILITY DIRECTORY</span>
           <strong>
-            {count("facilities", state.facilities.length)}
+            Explore
             <small>Directory listings</small>
           </strong>
           <Icon name="map" />
