@@ -4,6 +4,10 @@ A web app for pet owners in Singapore, built as a CS5224 group project. The MVP 
 
 The backend foundation (settings, PostgreSQL, user model, `/health/` and `/me/`) is in place. Pet profiles and the marketplace catalogue are implemented; see [docs/architecture.md](docs/architecture.md) for the current state.
 
+## Deployed website
+
+The dev stage is live at <https://d1xp4itbaqmwsl.cloudfront.net>. [`deploy.yml`](.github/workflows/deploy.yml) redeploys it on every push to `main` that changes `backend/`, `frontend/` or `infra/`; see [infra/README.md](infra/README.md#deploying-from-github).
+
 ## Layout
 
 - [frontend/](frontend/): Next.js app, managed with Yarn. See [frontend/README.md](frontend/README.md).

@@ -59,8 +59,11 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
         products: rows.map((v) => map.product(v, categories, merchants)),
       };
     },
-    async facilities() {
-      return (await client.list("facilities/")).map(map.facility);
+    async facilities(params = new URLSearchParams(), signal?: AbortSignal) {
+      const query = params.toString();
+      return (
+        await client.list(`facilities/${query ? `?${query}` : ""}`, { signal })
+      ).map(map.facility);
     },
     async me() {
       return map.profile(await client.request("me/", privateRequest));
@@ -400,4 +403,7 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
   };
   return service;
 }
-export const services = localUI ? localServices : createServices(api);
+const apiServices = createServices(api);
+export const services = localUI
+  ? { ...localServices, facilities: apiServices.facilities }
+  : apiServices;

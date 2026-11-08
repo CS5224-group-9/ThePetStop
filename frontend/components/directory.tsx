@@ -1,24 +1,31 @@
 "use client";
 import "./facility-explorer.css";
-import { localUI } from "@/lib/data-source";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   searchLocations,
   type LocationResult,
 } from "@/lib/api/location-services";
 import { ApiError } from "@/lib/api/client";
 import { nearbyFacilities } from "@/lib/facility-search";
+import {
+  approvedAnimalLabels,
+  type ApprovedAnimal,
+} from "@/lib/facility-animals";
 import { currentLocation, type SearchLocation } from "@/lib/location";
-import { useApp } from "./app-provider";
+import { services } from "@/lib/api/services";
+import type { Facility } from "@/lib/api/types";
 import { Badge, Empty, Icon } from "./ui";
-import { ResourceState } from "./resource-state";
+
 import { FacilityMap } from "./facility-map";
 import { displayDate, safeExternalUrl } from "@/lib/format";
 export function Directory() {
-  const { state } = useApp();
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [facilityError, setFacilityError] = useState("");
+  const [facilityLoading, setFacilityLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
-  const [emergency, setEmergency] = useState(false);
+  const [animal, setAnimal] = useState<ApprovedAnimal | "">("");
   const [selected, setSelected] = useState("");
   const [location, setLocation] = useState<SearchLocation | null>(null);
   const [locating, setLocating] = useState(false);
@@ -34,6 +41,39 @@ export function Directory() {
   const placeController = useRef<AbortController | null>(null);
   const locationRequest = useRef(0);
   const pendingLocation = useRef(false);
+  const resultsList = useRef<HTMLDivElement>(null);
+  const detailHeading = useRef<HTMLHeadingElement>(null);
+  const selectionTrigger = useRef<HTMLElement | null>(null);
+  const selectMapFacility = useCallback(
+    (id: string, trigger: HTMLButtonElement) => {
+      selectionTrigger.current = trigger;
+      setSelected(id);
+      const list = resultsList.current;
+      const row = document.getElementById(
+        `facility-result-${encodeURIComponent(id)}`,
+      );
+      if (list && row) {
+        const bounds = list.getBoundingClientRect();
+        const item = row.getBoundingClientRect();
+        if (item.top < bounds.top || item.bottom > bounds.bottom)
+          list.scrollTo({
+            top:
+              list.scrollTop +
+              item.top -
+              bounds.top -
+              Math.max(0, (list.clientHeight - item.height) / 2),
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+              .matches
+              ? "instant"
+              : "smooth",
+          });
+      }
+      requestAnimationFrame(() =>
+        detailHeading.current?.focus({ preventScroll: true }),
+      );
+    },
+    [],
+  );
   useEffect(
     () => () => {
       locationRequest.current += 1;
@@ -119,15 +159,40 @@ export function Directory() {
     cancelPlaceSearch();
     document.getElementById("facility-search")?.focus();
   }
-  function selectFacility(id: string) {
-    const match = state.facilities.find((item) => item.id === id);
+  function selectFacility(id: string, trigger: HTMLButtonElement) {
+    const match = facilities.find((item) => item.id === id);
     if (!match) return;
     locationRequest.current += 1;
     setLocating(false);
     setLocationError("");
     cancelPlaceSearch();
     setSuggestionsOpen(false);
+    selectionTrigger.current = trigger;
     setSelected(id);
+    requestAnimationFrame(() => {
+      detailHeading.current?.focus({ preventScroll: true });
+      if (window.matchMedia("(max-width: 700px)").matches)
+        detailHeading.current?.closest(".explorer-map")?.scrollIntoView({
+          block: "start",
+          behavior: "instant",
+        });
+    });
+  }
+  function closeDetails() {
+    const trigger = selectionTrigger.current;
+    const row = document.getElementById(
+      `facility-result-${encodeURIComponent(selected)}`,
+    );
+    setSelected("");
+    requestAnimationFrame(() => {
+      const target = trigger?.isConnected ? trigger : row;
+      target?.focus({ preventScroll: true });
+      if (
+        target?.classList.contains("explorer-row") &&
+        window.matchMedia("(max-width: 700px)").matches
+      )
+        target.scrollIntoView({ block: "nearest", behavior: "instant" });
+    });
   }
   function clearSearch() {
     cancelPlaceSearch();
@@ -139,25 +204,52 @@ export function Directory() {
     setLocating(false);
     setLocationError("");
   }
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams();
+    if (type) params.set("type", type === "Pet shop" ? "pet_shop" : "vet");
+    if (animal) params.set("animal", animal);
+    if (location) {
+      params.set("lat", String(location.latitude));
+      params.set("lng", String(location.longitude));
+      if (radiusKm !== null) params.set("radius_km", String(radiusKm));
+    }
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return;
+      setFacilityLoading(true);
+      setFacilityError("");
+      setFacilities([]);
+    });
+    services
+      .facilities(params, controller.signal)
+      .then(setFacilities)
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setFacilityError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load facilities.",
+          );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setFacilityLoading(false);
+      });
+    return () => controller.abort();
+  }, [type, animal, location, radiusKm, retry]);
   const filtered = useMemo(
-    () =>
-      nearbyFacilities(
-        state.facilities,
-        { type, emergency },
-        location,
-        radiusKm,
-      ),
-    [state.facilities, type, emergency, location, radiusKm],
+    () => nearbyFacilities(facilities, { type: "" }, location, null),
+    [facilities, location],
   );
   const facility = filtered.find((f) => f.id === selected);
   const source = safeExternalUrl(facility?.source_url);
   const website = safeExternalUrl(facility?.website);
   function resetFilters() {
     setType("");
-    setEmergency(false);
+    setAnimal("");
+    setSelected("");
     setRadiusKm(5);
   }
-  const hasFilters = Boolean(type || emergency || (location && radiusKm !== 5));
+  const hasFilters = Boolean(type || animal || (location && radiusKm !== 5));
   return (
     <div className="facility-explorer">
       <header className="explorer-heading">
@@ -198,7 +290,15 @@ export function Directory() {
           </div>
         </section>
       )}
-      <ResourceState domain="facilities">
+      <div aria-busy={facilityLoading}>
+        {facilityError && (
+          <div role="alert">
+            <p>{facilityError}</p>
+            <button type="button" onClick={() => setRetry(retry + 1)}>
+              Try again
+            </button>
+          </div>
+        )}
         <div className="explorer-workspace">
           <div className="explorer-controls">
             <form
@@ -288,9 +388,13 @@ export function Directory() {
                     : placeSearched
                       ? `${placeResults.length} locations found. Choose one to see nearby facilities.`
                       : "Press Search, then choose a matching location."
-                  : location
-                    ? `Showing ${filtered.length} facilities ${radiusKm === null ? "across Singapore" : `within ${radiusKm} km`}, nearest first. Distances are straight-line.`
-                    : "Search for a location or use your current location to find facilities within a radius."}
+                  : facilityLoading
+                    ? "Loading facilities…"
+                    : facilityError
+                      ? "Facility results are unavailable."
+                      : location
+                        ? `Showing ${filtered.length} facilities ${radiusKm === null ? "across Singapore" : `within ${radiusKm} km`}, nearest first. Distances are straight-line.`
+                        : "Search for a location or use your current location to find facilities within a radius."}
               </p>
               {suggestionsOpen && (
                 <div
@@ -368,29 +472,59 @@ export function Directory() {
                     type="button"
                     key={value}
                     aria-pressed={type === value}
-                    onClick={() => setType(value)}
+                    onClick={() => {
+                      setType(value);
+                      setAnimal("");
+                      setSelected("");
+                    }}
                   >
                     <Icon name={icon} size={16} />
                     {label}
                   </button>
                 ))}
               </div>
-              <label className="explorer-emergency">
-                <input
-                  type="checkbox"
-                  checked={emergency}
-                  onChange={(e) => setEmergency(e.target.checked)}
-                />
-                24-hour emergency
-              </label>
+              {type === "Pet shop" && (
+                <label className="explorer-radius">
+                  Approved animals
+                  <select
+                    aria-label="Filter pet shops by approved animal"
+                    value={animal}
+                    onChange={(event) => {
+                      setAnimal(event.target.value as ApprovedAnimal | "");
+                      setSelected("");
+                    }}
+                  >
+                    <option value="">All animals</option>
+                    {Object.entries(approvedAnimalLabels).map(
+                      ([code, label]) => (
+                        <option key={code} value={code}>
+                          {label}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+              )}
             </div>
           </div>
-          <div className="explorer-panes">
+          <div
+            className="explorer-panes"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && facility) {
+                event.preventDefault();
+                event.stopPropagation();
+                closeDetails();
+              }
+            }}
+          >
             <section className="explorer-results" aria-label="Facility results">
               <div className="explorer-results-heading">
                 <h2 aria-live="polite">
-                  {filtered.length}{" "}
-                  {filtered.length === 1 ? "facility" : "facilities"}
+                  {facilityLoading
+                    ? "Loading facilities…"
+                    : facilityError
+                      ? "Facilities unavailable"
+                      : `${filtered.length} ${filtered.length === 1 ? "facility" : "facilities"}`}
                 </h2>
                 {hasFilters ? (
                   <button type="button" onClick={resetFilters}>
@@ -400,8 +534,21 @@ export function Directory() {
                   <span>{location ? "Nearest first" : "Singapore"}</span>
                 )}
               </div>
-              <div className="explorer-rows">
-                {filtered.length ? (
+              <div className="explorer-rows" ref={resultsList}>
+                {facilityLoading ? (
+                  <div className="explorer-skeleton" aria-hidden="true">
+                    {[0, 1, 2].map((row) => (
+                      <div className="explorer-skeleton-row" key={row}>
+                        <span className="explorer-skeleton-icon" />
+                        <span className="explorer-skeleton-lines">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : facilityError ? null : filtered.length ? (
                   filtered.map((f) => (
                     <button
                       type="button"
@@ -410,9 +557,14 @@ export function Directory() {
                       id={`facility-result-${encodeURIComponent(f.id)}`}
                       aria-pressed={facility?.id === f.id}
                       aria-controls={
-                        facility ? "facility-detail-panel" : undefined
+                        facility?.id === f.id
+                          ? "facility-detail-panel"
+                          : undefined
                       }
-                      onClick={() => selectFacility(f.id)}
+                      aria-expanded={facility?.id === f.id}
+                      onClick={(event) =>
+                        selectFacility(f.id, event.currentTarget)
+                      }
                     >
                       <span
                         className={`explorer-type-icon ${f.type === "Pet shop" ? "shop" : "vet"}`}
@@ -425,12 +577,6 @@ export function Directory() {
                       <span className="explorer-row-content">
                         <span className="explorer-row-heading">
                           <span className="explorer-row-type">{f.type}</span>
-                          {f.emergency && (
-                            <span className="explorer-hours-badge">
-                              <Icon name="clock" size={13} />
-                              24-hour
-                            </span>
-                          )}
                         </span>
                         <strong>{f.name}</strong>
                         {location && (
@@ -460,7 +606,7 @@ export function Directory() {
                         </span>
                         <span className="explorer-row-action">
                           {facility?.id === f.id
-                            ? "Selected · details below"
+                            ? "Selected · details open"
                             : "View facility"}
                           <Icon
                             name={facility?.id === f.id ? "check" : "arrow"}
@@ -491,13 +637,132 @@ export function Directory() {
               className="explorer-map"
               aria-label="Singapore facility map"
             >
-              <FacilityMap
-                facilities={filtered}
-                selected={facility?.id || ""}
-                onSelect={setSelected}
-                location={location}
-                radiusKm={radiusKm}
-              />
+              <div
+                className="explorer-map-body"
+                data-detail-open={Boolean(facility)}
+              >
+                <div className="explorer-map-canvas">
+                  <FacilityMap
+                    facilities={filtered}
+                    selected={facility?.id || ""}
+                    onSelect={selectMapFacility}
+                    location={location}
+                    radiusKm={radiusKm}
+                  />
+                </div>
+                {facility && (
+                  <aside
+                    key={facility.id}
+                    className="explorer-detail"
+                    id="facility-detail-panel"
+                    aria-labelledby="facility-detail-title"
+                  >
+                    <div className="explorer-detail-toolbar">
+                      <Badge tone="neutral">{facility.type}</Badge>
+                      <button
+                        type="button"
+                        className="explorer-dismiss"
+                        onClick={closeDetails}
+                        aria-label="Close facility details"
+                      >
+                        <Icon name="close" />
+                      </button>
+                    </div>
+                    <div className="explorer-detail-heading">
+                      <h2
+                        id="facility-detail-title"
+                        ref={detailHeading}
+                        tabIndex={-1}
+                      >
+                        {facility.name}
+                      </h2>
+                      <p>{facility.address}</p>
+                    </div>
+                    {facility.type === "Pet shop" && (
+                      <section
+                        className="explorer-approved-animals"
+                        aria-label="Approved animals for sale"
+                      >
+                        <h3>Approved animals for sale</h3>
+                        {facility.approved_animals?.length ? (
+                          <>
+                            <ul>
+                              {facility.approved_animals.map((code) => (
+                                <li key={code}>{approvedAnimalLabels[code]}</li>
+                              ))}
+                            </ul>
+                            <p>
+                              Approval does not confirm current availability.
+                            </p>
+                          </>
+                        ) : (
+                          <p>Animal approval information not available.</p>
+                        )}
+                      </section>
+                    )}
+                    <div className="explorer-detail-actions">
+                      <a
+                        className="button"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(facility.latitude !== null && facility.longitude !== null ? `${facility.latitude},${facility.longitude}` : facility.address)}`}
+                      >
+                        Get directions
+                        <Icon name="arrow" size={17} />
+                      </a>
+                      {website && (
+                        <a
+                          className="text-link"
+                          href={website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Website ↗
+                        </a>
+                      )}
+                      {facility.phone && (
+                        <a
+                          className="text-link"
+                          href={`tel:${facility.phone.replace(/[^+0-9]/g, "")}`}
+                        >
+                          Call {facility.phone}
+                        </a>
+                      )}
+                    </div>
+                    <details className="explorer-registry-details">
+                      <summary>Registry details</summary>
+                      <dl className="explorer-facts">
+                        <div>
+                          <dt>Licence number</dt>
+                          <dd>{facility.licence_no || "Not supplied"}</dd>
+                        </div>
+                        <div>
+                          <dt>Verification source</dt>
+                          <dd>{facility.source || "Not supplied"}</dd>
+                        </div>
+                        <div>
+                          <dt>Last checked</dt>
+                          <dd>
+                            {facility.last_checked_at
+                              ? displayDate(facility.last_checked_at)
+                              : "Not supplied"}
+                          </dd>
+                        </div>
+                      </dl>
+                      {source && (
+                        <a
+                          className="text-link"
+                          href={source}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Verification source ↗
+                        </a>
+                      )}
+                    </details>
+                  </aside>
+                )}
+              </div>
             </section>
           </div>
           <div className="explorer-map-footer">
@@ -533,99 +798,12 @@ export function Directory() {
             </p>
           </div>
         </div>
-        {facility && (
-          <section
-            className="explorer-detail"
-            id="facility-detail-panel"
-            aria-label={`Details for ${facility.name}`}
-          >
-            <div className="explorer-detail-heading">
-              <div>
-                <Badge tone="neutral">{facility.type}</Badge>
-                <h2>{facility.name}</h2>
-                <p>{facility.address}</p>
-              </div>
-              <button
-                type="button"
-                className="explorer-dismiss"
-                onClick={() => {
-                  setSelected("");
-                  document
-                    .getElementById(
-                      `facility-result-${encodeURIComponent(facility.id)}`,
-                    )
-                    ?.focus();
-                }}
-                aria-label="Close facility details"
-              >
-                <Icon name="close" />
-              </button>
-            </div>
-            <dl className="explorer-facts">
-              <div>
-                <dt>Licence number</dt>
-                <dd>{facility.licence_no || "Not supplied"}</dd>
-              </div>
-              <div>
-                <dt>Verification source</dt>
-                <dd>{facility.source || "Not supplied"}</dd>
-              </div>
-              <div>
-                <dt>Last checked</dt>
-                <dd>
-                  {facility.last_checked_at
-                    ? displayDate(facility.last_checked_at)
-                    : "Not supplied"}
-                </dd>
-              </div>
-            </dl>
-            <div className="explorer-detail-actions">
-              <a
-                className="button"
-                target="_blank"
-                rel="noopener noreferrer"
-                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(facility.latitude !== null && facility.longitude !== null ? `${facility.latitude},${facility.longitude}` : facility.address)}`}
-              >
-                Get directions
-                <Icon name="arrow" size={17} />
-              </a>
-              {source && (
-                <a
-                  className="text-link"
-                  href={source}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Verification source ↗
-                </a>
-              )}
-              {website && (
-                <a
-                  className="text-link"
-                  href={website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Website ↗
-                </a>
-              )}
-              {facility.phone && (
-                <a
-                  className="text-link"
-                  href={`tel:${facility.phone.replace(/[^+0-9]/g, "")}`}
-                >
-                  Call {facility.phone}
-                </a>
-              )}
-            </div>
-          </section>
-        )}
         <p className="explorer-note">
-          {localUI
-            ? "These listings are fictional and unverified; pins show approximate sample locations. Your device location stays in this page’s memory. Directions open an external map."
-            : "Licence information reflects the source and check date shown. Contact the facility to confirm current services and opening hours. Your device location stays in this page’s memory."}
+          Licence information reflects the source and check date shown. Contact
+          the facility to confirm current services and opening hours. Your
+          device location stays in this page’s memory.
         </p>
-      </ResourceState>
+      </div>
     </div>
   );
 }

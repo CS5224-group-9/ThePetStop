@@ -3,9 +3,11 @@ import time
 from unittest.mock import patch
 
 from django.core.cache import cache
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
+from .models import Facility, FacilitySyncRun
 from .onemap import (
     OneMapClient,
     SearchFailed,
@@ -178,6 +180,135 @@ class OneMapTests(SimpleTestCase):
             response.status, response.read.return_value = status, payload
             with self.assertRaises(exception):
                 _request_json("/test")
+
+
+class FacilityListViewTests(TestCase):
+    def setUp(self):
+        run = FacilitySyncRun.objects.create(source="vet")
+        self.facility = Facility.objects.create(
+            source_id="vet",
+            source_key="test-vet",
+            facility_type="vet",
+            name="Bishan Veterinary Centre",
+            address="1 Bishan Street",
+            postal_code="570001",
+            latitude="1.350000",
+            longitude="103.840000",
+            source="AVS",
+            source_url="https://example.test/registry",
+            source_document_url="https://example.test/registry.pdf",
+            last_checked_at=timezone.now(),
+            active=True,
+            last_seen_run=run,
+        )
+        Facility.objects.create(
+            source_id="pet_shop",
+            source_key="inactive-shop",
+            facility_type="pet_shop",
+            name="Inactive Shop",
+            address="2 Bishan Street",
+            postal_code="570002",
+            source="AVS",
+            source_url="https://example.test/registry",
+            source_document_url="https://example.test/registry.pdf",
+            last_checked_at=timezone.now(),
+            active=False,
+            last_seen_run=run,
+        )
+
+    def test_public_list_returns_active_registry_rows_and_no_store(self):
+        response = APIClient().get(
+            "/api/v1/facilities/", HTTP_AUTHORIZATION="Bearer invalid"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(response.json()["count"], 1)
+        row = response.json()["results"][0]
+        self.assertEqual(row["id"], str(self.facility.id))
+        self.assertEqual(row["facility_type"], "vet")
+        self.assertEqual(row["latitude"], "1.350000")
+        self.assertEqual(row["verification_status"], "verified")
+        self.assertIsNone(row["approved_animals"])
+        self.assertNotIn("email", row)
+
+    def test_filters_before_pagination_and_orders_by_distance(self):
+        for index in range(25):
+            Facility.objects.create(
+                source_id="pet_shop",
+                source_key=f"shop-{index}",
+                facility_type="pet_shop",
+                name=f"Shop {index:02}",
+                address="Bishan",
+                postal_code="570001",
+                latitude=1.35 + index * 0.001,
+                longitude=103.84,
+                approved_animals=["cat"],
+                source="AVS",
+                source_url="https://example.test/registry",
+                source_document_url="https://example.test/registry.pdf",
+                last_checked_at=timezone.now(),
+                last_seen_run=self.facility.last_seen_run,
+            )
+        response = APIClient().get(
+            "/api/v1/facilities/",
+            {
+                "type": "pet_shop",
+                "animal": "cat",
+                "lat": 1.35,
+                "lng": 103.84,
+                "radius_km": 1,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 9)
+        self.assertEqual(
+            [row["name"] for row in response.json()["results"]],
+            [f"Shop {index:02}" for index in range(9)],
+        )
+
+        page = (
+            APIClient()
+            .get(
+                "/api/v1/facilities/",
+                {
+                    "type": "pet_shop",
+                    "animal": "cat",
+                    "lat": 1.35,
+                    "lng": 103.84,
+                    "radius_km": 5,
+                },
+            )
+            .json()
+        )
+        self.assertEqual(page["count"], 25)
+        self.assertIsNotNone(page["next"])
+        self.assertEqual(
+            [row["name"] for row in page["results"]],
+            [f"Shop {index:02}" for index in range(20)],
+        )
+
+    def test_invalid_filter_parameters(self):
+        for params in (
+            {"lat": 1},
+            {"radius_km": 5},
+            {"lat": "nan", "lng": 2},
+            {"type": "other"},
+            {"animal": "horse"},
+            {"lat": 1, "lng": 2, "radius_km": 0},
+        ):
+            self.assertEqual(
+                APIClient().get("/api/v1/facilities/", params).status_code, 400
+            )
+
+    def test_list_is_read_only(self):
+        self.assertEqual(APIClient().post("/api/v1/facilities/").status_code, 405)
+
+    def test_pet_shop_approvals_are_public_and_vets_remain_unknown(self):
+        self.facility.facility_type = "pet_shop"
+        self.facility.approved_animals = ["dog", "cat"]
+        self.facility.save()
+        row = APIClient().get("/api/v1/facilities/").json()["results"][0]
+        self.assertEqual(row["approved_animals"], ["dog", "cat"])
 
 
 class LocationSearchViewTests(SimpleTestCase):

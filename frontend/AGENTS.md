@@ -15,7 +15,7 @@ These instructions apply to files under `frontend/`. Keep them outside the gener
 ## Current frontend
 
 - Next.js App Router with React, TypeScript, and Tailwind CSS. Check `package.json` for versions.
-- The frontend defaults to a standalone local UI, using sample data and browser storage. `NEXT_PUBLIC_DATA_SOURCE=api` explicitly enables the shared API client and configurable Cognito OIDC sign-in. Local mode is not an error fallback; never present its facilities as officially verified. MapLibre and oidc-client-ts are installed. Backend endpoints/configuration remain a separate integration task; see `README.md` and `../docs/frontend-integration.md`. Contract checks use Node’s built-in test runner; no component test runner is installed.
+- The frontend defaults to a standalone local UI, using sample data and browser storage for pets and the marketplace. Facility listings and address search always use the backend API in both data modes; local mode does not fall back to sample facilities. `NEXT_PUBLIC_DATA_SOURCE=api` explicitly enables API-backed application state and configurable Cognito OIDC sign-in. MapLibre and oidc-client-ts are installed. See `README.md` and `../docs/frontend-integration.md`. Contract checks use Node’s built-in test runner; no component test runner is installed.
 - Dependency management is Yarn. Use `yarn add` and `yarn remove`, and commit `yarn.lock`. Do not create `package-lock.json`.
 
 ## Implementation guidelines
@@ -27,7 +27,7 @@ These instructions apply to files under `frontend/`. Keep them outside the gener
 - Veterinary documents and pet photos are private. Do not place their URLs in query strings, logs, or analytics.
 - MapLibre renders OneMap tiles. Node’s built-in runner covers the client/service contracts; Jest is not installed.
 - The app is statically exported (`output: 'export'`) to S3 and CloudFront. Do not use features that need a Next.js server: no API routes, no server actions, no request-time data fetching in server components, no middleware (proxy), rewrites, redirects or custom headers in `next.config`. Keep `trailingSlash: true` and `images.unoptimized: true`. Pages for one record take the id as a query parameter, such as `/pets/detail?id=…`.
-- In API mode, facility and product browsing is public; pets, reminders, cart, checkout, orders and the merchant portal require sign-in. Local UI mode exposes the visible flows without authentication, including the fictional merchant workspace.
+- Facility and product browsing is public; pets, reminders, cart, checkout, orders and the merchant portal require sign-in in API mode. Local UI mode exposes the other visible flows without authentication, including the fictional merchant workspace.
 - Label simulated checkout as simulated. Never show wording that implies a real charge.
 - Show AVS licence status as returned by the backend. Do not present mock or stale facility data as official registry data.
 
