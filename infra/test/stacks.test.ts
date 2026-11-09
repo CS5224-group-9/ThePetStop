@@ -55,6 +55,26 @@ test('every bucket blocks public access', () => {
   }
 });
 
+test('product images allow browser uploads while staying private', () => {
+  const bucket = Object.values(t.storage.findResources('AWS::S3::Bucket')).find((resource) => {
+    const rules = resource.Properties.CorsConfiguration?.CorsRules as
+      { AllowedOrigins?: string[]; AllowedMethods?: string[] }[] | undefined;
+    return rules?.some(
+      (rule) => rule.AllowedOrigins?.includes('*') && rule.AllowedMethods?.includes('PUT'),
+    );
+  });
+  expect(bucket).toBeDefined();
+  expect(bucket!.Properties.CorsConfiguration.CorsRules).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        AllowedOrigins: ['*'],
+        AllowedMethods: expect.arrayContaining(['PUT']),
+        AllowedHeaders: ['content-type'],
+      }),
+    ]),
+  );
+});
+
 test('PetFiles bucket expires old versions and aborts incomplete uploads', () => {
   t.storage.hasResourceProperties('AWS::S3::Bucket', {
     VersioningConfiguration: { Status: 'Enabled' },
@@ -191,15 +211,24 @@ test('only the API function can read and write pet files, by object, without lis
   const s3Statements = statements.filter(({ statement }) =>
     actionsOf(statement).some((a) => a.startsWith('s3:')),
   );
-  expect(s3Statements).toHaveLength(1);
-  const [{ statement, roles }] = s3Statements;
-  expect([...actionsOf(statement)].sort()).toEqual([
+  expect(s3Statements).toHaveLength(2);
+  const petFiles = s3Statements.find(({ statement }) =>
+    JSON.stringify(statement.Resource).includes('/pets/*'),
+  );
+  const productImages = s3Statements.find(({ statement }) =>
+    JSON.stringify(statement.Resource).includes('/product-images/*'),
+  );
+
+  expect(petFiles).toBeDefined();
+  expect(productImages).toBeDefined();
+  expect([...actionsOf(petFiles!.statement)].sort()).toEqual([
     's3:DeleteObject',
     's3:GetObject',
     's3:PutObject',
   ]);
-  expect(JSON.stringify(statement.Resource)).toContain('/pets/*');
-  expect(roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
+  expect([...actionsOf(productImages!.statement)]).toEqual(['s3:PutObject']);
+  expect(petFiles!.roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
+  expect(productImages!.roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
 
   for (const { statement: s } of statements) {
     for (const action of actionsOf(s)) {
