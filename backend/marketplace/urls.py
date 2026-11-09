@@ -4,6 +4,16 @@ from . import views
 
 urlpatterns = [
     path(
+        "merchant/orders/",
+        views.OwnedMerchantOrderListView.as_view(),
+        name="owned-merchant-order-list",
+    ),
+    path(
+        "merchant/orders/<int:pk>/",
+        views.OwnedMerchantOrderDetailView.as_view(),
+        name="owned-merchant-order-detail",
+    ),
+    path(
         "merchant/products/",
         views.OwnedMerchantProductListCreateView.as_view(),
         name="owned-merchant-product-list",

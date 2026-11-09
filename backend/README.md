@@ -297,6 +297,25 @@ uv run python .\manage.py load_catalogue
 
 The command is idempotent. The six fictional shops (`shop-1.json` to `shop-6.json`) have 24 products each: 12 shop-specific items and 12 in pairwise comparison groups (36 groups, each sold by exactly two shops). Product image delivery uses `PRODUCT_IMAGES_BASE_URL`; set it to a CloudFront base URL locally to return image URLs for populated `image_key` values. AWS configures the bucket name and CloudFront URL automatically.
 
+### Merchant workspace (local development)
+
+Enable `DJANGO_DEBUG=True` and `DJANGO_DEV_AUTH=true` in `backend/.env`.
+After migrations and `load_catalogue`, assign the demo shop to Mira:
+
+```powershell
+uv run python manage.py seed_merchant
+```
+
+This links Mira to Harbour Paws Supply without resetting stock or orders. It is
+safe to repeat and refuses to replace another user's shop ownership. Use
+`--shop <slug>` to select a different existing, active shop.
+
+Run the frontend in API mode with `NEXT_PUBLIC_DEV_AUTH=true`, sign in as Mira
+at <http://localhost:3000/login/>, then open <http://localhost:3000/merchant/>.
+The workspace loads the shop's products and merchant sub-orders. Fulfilment
+updates follow `paid → processing → shipped → delivered` and affect only the
+merchant's own sub-order; customer payment status remains `paid`.
+
 ### OneMap location search (local development)
 
 The facilities API contract is documented in [the facilities OpenAPI specification](../docs/openapi/facilities.yaml). It marks the implemented location search separately from the planned facility list and detail routes.

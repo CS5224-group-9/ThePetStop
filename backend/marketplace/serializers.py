@@ -209,6 +209,23 @@ class MerchantOrderSerializer(serializers.ModelSerializer):
         fields = ["id", "merchant", "status", "subtotal_cents", "items"]
 
 
+class OwnedMerchantOrderSerializer(MerchantOrderSerializer):
+    created_at = serializers.DateTimeField(source="order.created_at", read_only=True)
+
+    class Meta(MerchantOrderSerializer.Meta):
+        fields = [*MerchantOrderSerializer.Meta.fields, "created_at"]
+
+
+class MerchantOrderStatusSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(
+        choices=[
+            MerchantOrder.PROCESSING,
+            MerchantOrder.SHIPPED,
+            MerchantOrder.DELIVERED,
+        ]
+    )
+
+
 class OrderSerializer(serializers.ModelSerializer):
     merchant_orders = serializers.SerializerMethodField()
 

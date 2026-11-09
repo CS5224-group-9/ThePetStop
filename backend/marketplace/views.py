@@ -17,10 +17,12 @@ from .serializers import (
     CartAddSerializer,
     CartQuantitySerializer,
     CategorySerializer,
+    MerchantOrderStatusSerializer,
     MerchantProductUpdateSerializer,
     MerchantProductWriteSerializer,
     MerchantSerializer,
     OrderSerializer,
+    OwnedMerchantOrderSerializer,
     ProductDetailSerializer,
     ProductSerializer,
     ShippingSerializer,
@@ -325,3 +327,46 @@ class OrderDetailView(NoStoreMixin, generics.RetrieveAPIView):
     def get_queryset(self):
         # Another user's order is a 404, never a 403
         return order_queryset(self.request.user)
+
+
+def owned_merchant_orders(user):
+    return (
+        MerchantOrder.objects.filter(merchant__owner=user, merchant__active=True)
+        .select_related("merchant", "order")
+        .prefetch_related("items")
+        .order_by("-order__created_at", "-pk")
+    )
+
+
+class OwnedMerchantOrderListView(NoStoreMixin, generics.ListAPIView):
+    permission_classes = [IsAuthenticated, IsMerchant]
+    serializer_class = OwnedMerchantOrderSerializer
+
+    def get_queryset(self):
+        return owned_merchant_orders(self.request.user)
+
+
+class OwnedMerchantOrderDetailView(NoStoreMixin, APIView):
+    permission_classes = [IsAuthenticated, IsMerchant]
+
+    def patch(self, request, pk):
+        serializer = MerchantOrderStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            row = get_object_or_404(
+                owned_merchant_orders(request.user).select_for_update(of=("self",)),
+                pk=pk,
+            )
+            transitions = {
+                MerchantOrder.PAID: MerchantOrder.PROCESSING,
+                MerchantOrder.PROCESSING: MerchantOrder.SHIPPED,
+                MerchantOrder.SHIPPED: MerchantOrder.DELIVERED,
+            }
+            next_status = serializer.validated_data["status"]
+            if transitions.get(row.status) != next_status:
+                raise ValidationError(
+                    {"status": ["Move to the next fulfilment status in sequence."]}
+                )
+            row.status = next_status
+            row.save(update_fields=["status", "updated_at"])
+        return Response(OwnedMerchantOrderSerializer(row).data)

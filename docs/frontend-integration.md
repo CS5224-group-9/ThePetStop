@@ -78,6 +78,12 @@ Implemented in Django; [openapi/marketplace-orders.yaml](openapi/marketplace-ord
 
 ### Merchant resources
 
+Django implements the product and merchant sub-order routes below. Access requires
+ownership of an active shop; a merchant group alone does not grant access. For
+local dev sign-in, run `load_catalogue` then `seed_merchant` to link Mira to
+Harbour Paws Supply. Sub-order lists are paginated and contain only owned shops;
+fulfilment updates enforce the sequence below under a database row lock.
+
 - `GET merchant/products/`: product rows belonging to the authenticated merchant only.
 - `POST merchant/products/`: `{name,description,category,price_cents,stock}` creates a product for the authenticated merchant. `category` is the category ID. Image upload and product-group assignment remain later work.
 - `PATCH merchant/products/{id}/`: `{price_cents,stock}`; backend validates membership/ownership and values.
