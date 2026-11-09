@@ -92,6 +92,41 @@ jobs:
           API: ${{ steps.outputs.outputs.api_base_url }}
         run: curl --fail --silent --show-error --retry 3 --retry-all-errors "${API}health/"
 
+      # The cart and order flow needs all six seeded shops, Idempotency-Key allowed by
+      # the checkout preflight, and the private routes behind the Cognito authorizer
+      - name: Check marketplace and order routes
+        env:
+          API: ${{ steps.outputs.outputs.api_base_url }}
+          ORIGIN: ${{ steps.outputs.outputs.frontend_url }}
+        run: |
+          shops=$(curl --fail --silent --show-error --retry 3 --retry-all-errors "${API}merchants/" | jq '.count')
+          echo "Active shops: $shops"
+          if [ "$shops" -lt 6 ]; then
+            echo "::error::expected 6 active shops, got $shops"
+            exit 1
+          fi
+
+          allowed=$(curl --silent --show-error --output /dev/null --dump-header - \
+            --request OPTIONS "${API}checkout/" \
+            --header "Origin: $ORIGIN" \
+            --header "Access-Control-Request-Method: POST" \
+            --header "Access-Control-Request-Headers: authorization,content-type,idempotency-key" \
+            | tr -d '\r' | grep -i '^access-control-allow-headers:' || true)
+          echo "Checkout preflight: ${allowed:-no allow-headers}"
+          if ! grep -qi 'idempotency-key' <<< "$allowed"; then
+            echo "::error::the checkout preflight does not allow Idempotency-Key"
+            exit 1
+          fi
+
+          for path in cart/ checkout/ orders/; do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' "${API}${path}")
+            echo "GET $path without a token: $status"
+            if [ "$status" != 401 ]; then
+              echo "::error::$path must require sign-in (expected 401, got $status)"
+              exit 1
+            fi
+          done
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: yarn install --frozen-lockfile
