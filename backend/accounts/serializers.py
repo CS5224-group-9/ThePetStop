@@ -1,3 +1,4 @@
+from django.apps import apps
 from rest_framework import serializers
 
 from .models import User
@@ -5,7 +6,6 @@ from .models import User
 
 class UserSerializer(serializers.ModelSerializer):
     groups = serializers.SerializerMethodField()
-    # Set once the marketplace has a Merchant model
     merchant = serializers.SerializerMethodField()
 
     class Meta:
@@ -20,4 +20,10 @@ class UserSerializer(serializers.ModelSerializer):
         return sorted(groups)
 
     def get_merchant(self, user):
-        return None
+        Merchant = apps.get_model("marketplace", "Merchant")
+        merchant = (
+            Merchant.objects.filter(owner=user, active=True).order_by("id").first()
+        )
+        if merchant is None:
+            return None
+        return {"id": merchant.pk, "name": merchant.name, "slug": merchant.slug}
