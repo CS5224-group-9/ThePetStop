@@ -50,6 +50,13 @@ export type RecordInput = {
   clinic: string;
   notes?: string;
 };
+export type NewProductInput = {
+  name: string;
+  description: string;
+  category: string;
+  price_cents: number;
+  stock: number;
+};
 export type Reminder = {
   id: string;
   pet_id: string;

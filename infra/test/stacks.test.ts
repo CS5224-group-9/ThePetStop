@@ -55,6 +55,26 @@ test('every bucket blocks public access', () => {
   }
 });
 
+test('product images allow browser uploads while staying private', () => {
+  const bucket = Object.values(t.storage.findResources('AWS::S3::Bucket')).find((resource) => {
+    const rules = resource.Properties.CorsConfiguration?.CorsRules as
+      { AllowedOrigins?: string[]; AllowedMethods?: string[] }[] | undefined;
+    return rules?.some(
+      (rule) => rule.AllowedOrigins?.includes('*') && rule.AllowedMethods?.includes('PUT'),
+    );
+  });
+  expect(bucket).toBeDefined();
+  expect(bucket!.Properties.CorsConfiguration.CorsRules).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        AllowedOrigins: ['*'],
+        AllowedMethods: expect.arrayContaining(['PUT']),
+        AllowedHeaders: ['content-type'],
+      }),
+    ]),
+  );
+});
+
 test('PetFiles bucket expires old versions and aborts incomplete uploads', () => {
   t.storage.hasResourceProperties('AWS::S3::Bucket', {
     VersioningConfiguration: { Status: 'Enabled' },
@@ -115,18 +135,63 @@ test('catch-all route requires a JWT; health and preflights are public', () => {
   }
 });
 
-test('API Lambdas run in the VPC with 14-day logs', () => {
-  t.api.resourceCountIs('AWS::Lambda::Function', 2);
-  t.api.allResourcesProperties('AWS::Lambda::Function', {
-    VpcConfig: Match.objectLike({ SubnetIds: Match.anyValue() }),
-  });
+test('database API Lambdas stay in the VPC with 14-day logs', () => {
+  t.api.resourceCountIs('AWS::Lambda::Function', 3);
+  const functions = Object.entries(t.api.findResources('AWS::Lambda::Function'));
+  for (const [id, fn] of functions.filter(([id]) => !id.startsWith('LocationSearch'))) {
+    expect(fn.Properties.VpcConfig.SubnetIds).toBeDefined();
+  }
   t.api.allResourcesProperties('AWS::Logs::LogGroup', { RetentionInDays: 14 });
 });
 
 test('both Lambdas get the pet files bucket name', () => {
-  t.api.allResourcesProperties('AWS::Lambda::Function', {
-    Environment: { Variables: Match.objectLike({ PET_FILES_BUCKET: Match.anyValue() }) },
+  const functions = Object.entries(t.api.findResources('AWS::Lambda::Function'));
+  for (const [id, fn] of functions.filter(([id]) => !id.startsWith('LocationSearch'))) {
+    expect(fn.Properties.Environment.Variables.PET_FILES_BUCKET).toBeDefined();
+  }
+});
+
+test('public location search uses a separate internet Lambda with only its secret', () => {
+  t.api.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+    RouteKey: 'GET /api/v1/locations/{proxy+}',
+    AuthorizationType: 'NONE',
   });
+  const functions = t.api.findResources('AWS::Lambda::Function');
+  const [id, fn] = Object.entries(functions).find(([id]) => id.startsWith('LocationSearch'))!;
+  expect(fn.Properties.VpcConfig).toBeUndefined();
+  expect(fn.Properties.ImageConfig.Command).toEqual(['facilities.search_handler.handler']);
+  expect(Object.keys(fn.Properties.Environment.Variables)).toEqual(['ONEMAP_SECRET_ARN']);
+  const integrations = t.api.findResources('AWS::ApiGatewayV2::Integration');
+  const [integrationId] = Object.entries(integrations).find(([, i]) =>
+    JSON.stringify(i.Properties.IntegrationUri).includes(id),
+  )!;
+  const route = Object.values(t.api.findResources('AWS::ApiGatewayV2::Route')).find(
+    (r) => r.Properties.RouteKey === 'GET /api/v1/locations/{proxy+}',
+  )!;
+  expect(JSON.stringify(route.Properties.Target)).toContain(integrationId);
+  const searchPolicy = Object.entries(t.api.findResources('AWS::IAM::Policy')).find(([key]) =>
+    key.startsWith('LocationSearchFunction'),
+  )![1];
+  const statements = searchPolicy.Properties.PolicyDocument.Statement;
+  expect(statements).toHaveLength(1);
+  expect(statements[0].Action).toEqual([
+    'secretsmanager:GetSecretValue',
+    'secretsmanager:DescribeSecret',
+  ]);
+  expect(JSON.stringify(statements[0].Resource)).toContain('LocationSearchCredentials');
+  t.api.hasResourceProperties('AWS::ApiGatewayV2::Stage', {
+    RouteSettings: {
+      'GET /api/v1/locations/{proxy+}': { ThrottlingBurstLimit: 5, ThrottlingRateLimit: 0.5 },
+    },
+  });
+});
+
+test('stage throttling waits for the location search route to exist', () => {
+  const [routeId] = Object.entries(t.api.findResources('AWS::ApiGatewayV2::Route')).find(
+    ([, route]) => route.Properties.RouteKey === 'GET /api/v1/locations/{proxy+}',
+  )!;
+  const stage = Object.values(t.api.findResources('AWS::ApiGatewayV2::Stage'))[0];
+  expect(stage.DependsOn).toContain(routeId);
 });
 
 test('only the API function can read and write pet files, by object, without listing', () => {
@@ -146,15 +211,24 @@ test('only the API function can read and write pet files, by object, without lis
   const s3Statements = statements.filter(({ statement }) =>
     actionsOf(statement).some((a) => a.startsWith('s3:')),
   );
-  expect(s3Statements).toHaveLength(1);
-  const [{ statement, roles }] = s3Statements;
-  expect([...actionsOf(statement)].sort()).toEqual([
+  expect(s3Statements).toHaveLength(2);
+  const petFiles = s3Statements.find(({ statement }) =>
+    JSON.stringify(statement.Resource).includes('/pets/*'),
+  );
+  const productImages = s3Statements.find(({ statement }) =>
+    JSON.stringify(statement.Resource).includes('/product-images/*'),
+  );
+
+  expect(petFiles).toBeDefined();
+  expect(productImages).toBeDefined();
+  expect([...actionsOf(petFiles!.statement)].sort()).toEqual([
     's3:DeleteObject',
     's3:GetObject',
     's3:PutObject',
   ]);
-  expect(JSON.stringify(statement.Resource)).toContain('/pets/*');
-  expect(roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
+  expect([...actionsOf(productImages!.statement)]).toEqual(['s3:PutObject']);
+  expect(petFiles!.roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
+  expect(productImages!.roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
 
   for (const { statement: s } of statements) {
     for (const action of actionsOf(s)) {

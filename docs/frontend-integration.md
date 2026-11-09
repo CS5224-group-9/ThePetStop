@@ -34,7 +34,7 @@ API mode can be tested offline without Cognito through a development sign-in tha
 
 ## Contract status
 
-Routes, ownership rules, pagination and integer-cent conventions follow `repository-structure.md`. The public marketplace catalogue, facility listing and pet profile endpoints (pets, photos, records, documents and reminders) are implemented in Django. The cart, checkout and order history endpoints are implemented too. The pet contract is [openapi/pets.yaml](openapi/pets.yaml) and the cart, checkout and orders contract is [openapi/marketplace-orders.yaml](openapi/marketplace-orders.yaml); both win over the summaries below. Merchant-write endpoints remain unimplemented. The catalogue wire shapes below should be checked against the serializers; the remaining wire shapes are **an explicit integration proposal**, derived from the draft data model, not generated backend types. Do not declare the complete application production-ready from frontend checks alone.
+Routes, ownership rules, pagination and integer-cent conventions follow `repository-structure.md`. The public marketplace catalogue, facility listing and pet profile endpoints (pets, photos, records, documents and reminders) are implemented in Django. The cart, checkout and order history endpoints are implemented too. The pet contract is [openapi/pets.yaml](openapi/pets.yaml) and the cart, checkout and orders contract is [openapi/marketplace-orders.yaml](openapi/marketplace-orders.yaml); both win over the summaries below. Merchant order endpoints remain unimplemented. The catalogue wire shapes below should be checked against the serializers; the remaining wire shapes are **an explicit integration proposal**, derived from the draft data model, not generated backend types. Do not declare the complete application production-ready from frontend checks alone.
 
 All lists return `{count, next, previous, results}`. `next` must remain on the configured API origin and under the configured base path. IDs may be strings or integers. Errors return `{error:{code,message,details}}`, with 401 for unauthenticated requests, 403 for insufficient role, and 404 for another owner’s private record. API redirects are rejected. Request/response field names are snake_case; amounts and stock are nonnegative integers.
 
@@ -42,7 +42,7 @@ All lists return `{count, next, previous, results}`. `next` must remain on the c
 
 - `GET categories/`: each row `{id,name,slug,sort_order}`.
 - `GET merchants/` and `GET merchants/{slug}/`: each row `{id,name,slug,description,logo_key}`. `GET merchants/{slug}/products/` returns the active products for that shop.
-- `GET products/?q&category&merchant&min_price&max_price&type&species&sort` and `GET products/{id}/`: rows include `{id,name,slug,description,species,size,price_cents,stock,product_type,duration_minutes,category,merchant,image_key,image_url,also_sold_by}`. Category and merchant are nested metadata objects. `image_url` is null until public product-image delivery is configured. Equivalent offers include their own `{id,name,size,species,price_cents,stock,merchant}`.
+- `GET products/?q&category&merchant&min_price&max_price&type&species&sort` and `GET products/{id}/`: rows include `{id,name,slug,description,species,size,price_cents,stock,product_type,duration_minutes,category,merchant,image_key,image_url,also_sold_by}`. Category and merchant are nested metadata objects. `image_url` is a CloudFront URL when `image_key` is set. Equivalent offers include their own `{id,name,size,species,price_cents,stock,merchant}`.
 - `GET facilities/`: paginated active database rows `{id,facility_type,name,address,postal_code,latitude,longitude,licence_no,phone,website,source,source_url,last_checked_at,verification_status,approved_animals}`. `facility_type` is `vet` or `pet_shop`; coordinates may be numeric strings or null. The backend marks rows verified only when they have a registry check date. A check date remains visible and does not imply real-time verification. Missing coordinates produce no fabricated pin. The current registry model has no opening-hours field, so the UI does not claim 24-hour availability.
 
 ### Account and pet resources
@@ -79,7 +79,9 @@ Implemented in Django; [openapi/marketplace-orders.yaml](openapi/marketplace-ord
 ### Merchant resources
 
 - `GET merchant/products/`: product rows belonging to the authenticated merchant only.
+- `POST merchant/products/`: `{name,description,category,price_cents,stock}` creates a product for the authenticated merchant. `category` is the category ID. Image upload and product-group assignment remain later work.
 - `PATCH merchant/products/{id}/`: `{price_cents,stock}`; backend validates membership/ownership and values.
+- `DELETE merchant/products/{id}/`: deactivates a product owned by the authenticated merchant (`active=false`) so order history can keep the product row; another merchant’s product returns 404.
 - `GET merchant/orders/`: merchant sub-order rows `{id,created_at,merchant:{id,name,slug},subtotal_cents,status,items:[...]}` using the order-item shape above.
 - `PATCH merchant/orders/{id}/`: `{status}`. UI transitions are `paid → processing → shipped → delivered`; the backend must reject invalid transitions and access to another merchant’s sub-order.
 

@@ -7,6 +7,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import { AuthStack } from './auth-stack';
 import { DataStack } from './data-stack';
@@ -64,6 +65,8 @@ export class ApiStack extends cdk.Stack {
         DB_SECRET_ARN: data.database.secret!.secretArn,
         DJANGO_ALLOWED_HOSTS: apiHost,
         DJANGO_CORS_ALLOWED_ORIGINS: storage.frontendUrl,
+        PRODUCT_IMAGES_BUCKET_NAME: storage.productImagesBucket.bucketName,
+        PRODUCT_IMAGES_BASE_URL: storage.frontendUrl,
         COGNITO_ISSUER: auth.issuer,
         COGNITO_CLIENT_ID: auth.client.userPoolClientId,
         COGNITO_JWKS: auth.jwks,
@@ -105,7 +108,48 @@ export class ApiStack extends cdk.Stack {
       data.database.secret!.grantRead(fn);
     }
 
+    // Merchant image uploads use short-lived presigned PUT URLs. Product images
+    // remain private in S3 and are read through the CloudFront OAC origin.
+    apiFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:PutObject'],
+        resources: [storage.productImagesBucket.arnForObjects('product-images/*')],
+      }),
+    );
+
     const integration = new HttpLambdaIntegration('Django', apiFunction);
+    // Search calls OneMap but never RDS, so it does not inherit shared's VPC config.
+    const searchSecret = new secretsmanager.Secret(this, 'LocationSearchCredentials', {
+      description: 'OneMap email/password for public interactive location search',
+      secretObjectValue: {
+        email: cdk.SecretValue.unsafePlainText(''),
+        password: cdk.SecretValue.unsafePlainText(''),
+      },
+    });
+    const searchFunction = new lambda.DockerImageFunction(this, 'LocationSearchFunction', {
+      architecture: lambda.Architecture.X86_64,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(18),
+      code: image('facilities.search_handler.handler'),
+      environment: { ONEMAP_SECRET_ARN: searchSecret.secretArn },
+      logGroup: twoWeekLogGroup(this, 'LocationSearchLogs'),
+    });
+    searchSecret.grantRead(searchFunction);
+    const [searchRoute] = api.addRoutes({
+      path: '/api/v1/locations/{proxy+}',
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration('LocationSearch', searchFunction),
+    });
+    // Shared route-level protection across Lambda instances; API Gateway returns 429.
+    const stage = api.defaultStage!.node.defaultChild as apigw.CfnStage;
+    // RouteSettings uses a literal key, so CloudFormation cannot infer this dependency.
+    stage.node.addDependency(searchRoute);
+    stage.addPropertyOverride('RouteSettings', {
+      'GET /api/v1/locations/{proxy+}': {
+        ThrottlingBurstLimit: 5,
+        ThrottlingRateLimit: 0.5,
+      },
+    });
     const authorizer = new HttpJwtAuthorizer('Cognito', auth.issuer, {
       // Cognito access tokens carry the app client in client_id, which this checks
       jwtAudience: [auth.client.userPoolClientId],
@@ -131,5 +175,7 @@ export class ApiStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ApiBaseUrl', { value: `https://${apiHost}/api/v1/` });
     new cdk.CfnOutput(this, 'ManageFunctionName', { value: manageFunction.functionName });
+    new cdk.CfnOutput(this, 'LocationSearchFunctionName', { value: searchFunction.functionName });
+    new cdk.CfnOutput(this, 'LocationSearchSecretArn', { value: searchSecret.secretArn });
   }
 }

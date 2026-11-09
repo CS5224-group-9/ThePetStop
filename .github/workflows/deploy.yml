@@ -68,21 +68,24 @@ jobs:
             echo "cognito_domain=$(jq -r '."PetStop-Dev-Auth".CognitoDomain' $out)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Run migrations
+      # load_catalogue upserts the fictional shops and products, so it is safe on every deploy
+      - name: Run migrations and load catalogue
         env:
           FUNCTION: ${{ steps.outputs.outputs.manage_function }}
         run: |
-          aws lambda invoke --function-name "$FUNCTION" \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"command": "migrate"}' \
-            --cli-read-timeout 300 \
-            result.json > invoke.json
-          jq -r '.output // .' result.json
-          # A handler exception still returns HTTP 200; FunctionError marks it
-          if jq -e '.FunctionError' invoke.json > /dev/null; then
-            echo "::error::migrate failed"
-            exit 1
-          fi
+          for command in migrate load_catalogue; do
+            aws lambda invoke --function-name "$FUNCTION" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "{\"command\": \"$command\"}" \
+              --cli-read-timeout 300 \
+              result.json > invoke.json
+            jq -r '.output // .' result.json
+            # A handler exception still returns HTTP 200; FunctionError marks it
+            if jq -e '.FunctionError' invoke.json > /dev/null; then
+              echo "::error::$command failed"
+              exit 1
+            fi
+          done
 
       - name: Check API health
         env:

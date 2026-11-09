@@ -3,6 +3,16 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path(
+        "merchant/products/",
+        views.OwnedMerchantProductListCreateView.as_view(),
+        name="owned-merchant-product-list",
+    ),
+    path(
+        "merchant/products/<int:pk>/",
+        views.OwnedMerchantProductDetailView.as_view(),
+        name="owned-merchant-product-detail",
+    ),
     path("categories/", views.CategoryListView.as_view(), name="category-list"),
     path("merchants/", views.MerchantListView.as_view(), name="merchant-list"),
     path(

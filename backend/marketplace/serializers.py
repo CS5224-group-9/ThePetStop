@@ -1,9 +1,21 @@
+from django.conf import settings
 from django.core.validators import RegexValidator
+from django.utils.text import slugify
 from rest_framework import serializers
 
 from .models import Category, Merchant, MerchantOrder, Order, OrderItem, Product
 
 MAX_CART_QUANTITY = 99
+
+
+def unique_product_slug(merchant, name):
+    base = slugify(name)[:40] or "product"
+    slug = base
+    suffix = 2
+    while Product.objects.filter(merchant=merchant, slug=slug).exists():
+        slug = f"{base}-{suffix}"
+        suffix += 1
+    return slug
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -47,8 +59,10 @@ class ProductSerializer(serializers.ModelSerializer):
             return None
         if obj.image_key.startswith(("https://", "http://")):
             return obj.image_key
-        # Product image delivery is added by D3 with the product-images bucket.
-        return None
+        base_url = getattr(settings, "PRODUCT_IMAGES_BASE_URL", "").rstrip("/")
+        if not base_url:
+            return None
+        return f"{base_url}/{obj.image_key.lstrip('/')}"
 
 
 class ProductDetailSerializer(ProductSerializer):
@@ -69,6 +83,26 @@ class ProductDetailSerializer(ProductSerializer):
             .order_by("price_cents", "merchant__name")
         )
         return ProductOfferSerializer(peers, many=True, context=self.context).data
+
+
+class MerchantProductWriteSerializer(serializers.ModelSerializer):
+    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
+
+    class Meta:
+        model = Product
+        fields = ["name", "description", "category", "price_cents", "stock"]
+
+    def create(self, validated_data):
+        merchant = self.context["merchant"]
+        validated_data["merchant"] = merchant
+        validated_data["slug"] = unique_product_slug(merchant, validated_data["name"])
+        return super().create(validated_data)
+
+
+class MerchantProductUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = ["price_cents", "stock"]
 
 
 class ProductOfferSerializer(serializers.ModelSerializer):

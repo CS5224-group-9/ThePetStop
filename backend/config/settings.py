@@ -176,6 +176,9 @@ CORS_ALLOWED_ORIGINS = env_list("DJANGO_CORS_ALLOWED_ORIGINS")
 # with its own list (infra/lib/api-stack.ts); this covers local runserver.
 CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
 
+PRODUCT_IMAGES_BUCKET_NAME = os.environ.get("PRODUCT_IMAGES_BUCKET_NAME", "")
+PRODUCT_IMAGES_BASE_URL = os.environ.get("PRODUCT_IMAGES_BASE_URL", "").rstrip("/")
+
 
 # Django REST Framework
 # https://www.django-rest-framework.org/api-guide/settings/

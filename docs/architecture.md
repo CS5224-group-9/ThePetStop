@@ -32,13 +32,14 @@ The plan matches this stack and the decisions below (updated 2026-10-16). It lis
 Browser
   │
   ├── CloudFront ── S3 "web"              Next.js static export
-  │       └────── S3 "product-images"     public catalogue images
+  │       └────── S3 "product-images"     private catalogue images via CloudFront OAC
   │
   └── API Gateway (HTTP API) ── Cognito JWT authorizer on protected routes
           │
           └── Lambda "api"  (Django container image + apig-wsgi, in VPC)
                  ├── RDS PostgreSQL       private subnets
                  ├── Secrets Manager      DB credentials, Django secret key
+                 ├── S3 "product-images"  presigned PUT uploads; CloudFront serves reads
                  └── S3 "pet-files"       private: pet photos, vet reports (presigned URLs)
 
 EventBridge Scheduler, weekly (facility sync, Sprint 2)
@@ -55,7 +56,7 @@ CloudWatch Logs + dashboard + alarms · CloudTrail · AWS Budgets · RDS automat
 | --- | --- |
 | Secure authentication and access controls | Cognito sign-up and sign-in. API Gateway rejects missing or invalid tokens on protected routes. Django maps the token's `sub` to a local user, filters every private query by owner, and checks `merchant` group membership for merchant routes. |
 | Managed database | One RDS PostgreSQL instance (`db.t4g.micro`, single-AZ). Each Django app owns its own tables. |
-| Object storage for product images | S3 `product-images`, served through CloudFront. Pet photos and vet reports live in a separate private bucket. |
+| Object storage for product images | Private S3 `product-images`, served through CloudFront OAC. The API Lambda can issue presigned PUTs for `product-images/*`; browser upload CORS is configured on this bucket. Pet photos and vet reports stay in the separate private `pet-files` bucket. |
 | Serverless APIs | API Gateway HTTP API and Lambda. There are no always-on servers. |
 | Monitoring | CloudWatch metrics for Lambda and RDS, a dashboard, email alarms on errors and throttles, and CloudTrail for the account. |
 | Logging | Structured JSON logs from Django to CloudWatch Logs, with 14-day retention. No pet medical data or presigned URLs in logs. |
@@ -122,7 +123,7 @@ Checked 2026-11-06 against the working tree.
 | Auth | `api.authentication.CognitoAuthentication` verifies Cognito access tokens (issuer, `client_id`, `token_use`, signature) and maps `sub` to `accounts.User`; session auth remains for the admin. A missing login returns 401. A pre-token-generation trigger adds `email` to access tokens. Users are not added to `owner` automatically; anyone not in `merchant` is treated as an owner. For local development only, `api.authentication.DevAuthentication` accepts `Authorization: Dev <alice\|bob\|mira>` and creates those users on first use. Three settings guards must all hold: `DJANGO_DEBUG=True`, `DJANGO_DEV_AUTH=true`, and not running in AWS Lambda (an opt-in inside Lambda stops Django from starting). Each request must also have a loopback Host (`localhost`, `127.0.0.1` or `[::1]`) and a loopback peer address, so a tunnel or another machine cannot use it. In AWS, API Gateway's JWT authorizer rejects the scheme before it reaches Django. |
 | Files, external data | `api/storage.py` stores pet photos and vet reports by key in the private `PetFiles` bucket. Uploads use presigned PUT URLs signed for the exact Content-Type and size, then a completion check (`HeadObject`) before the file becomes visible; downloads use short-lived presigned GET URLs; deletes run after the transaction commits. With `DJANGO_DEBUG=True` and no `PET_FILES_BUCKET`, a local backend keeps files under `backend/.local-storage/` and serves Django-signed, expiring URLs at `/api/v1/local-files/<token>/` to loopback clients only; `api/log_filters.py` redacts those tokens from the runserver logs. With neither, file routes return 503. If `complete` keeps returning 409 after a successful PUT, the usual cause is a missing `s3:GetObject` grant: without `s3:ListBucket`, S3 answers `HeadObject` with 403, which the API treats as "not uploaded yet", and CloudWatch shows "Pet file head returned 403". External data: the OneMap location search, and the facility ingestion above, which reads the AVS registries and geocodes addresses through OneMap. |
 | Infrastructure as code | CDK app in `infra/` with five stacks: `PetStop-Dev-Network` (VPC, endpoints, security groups), `-Data` (RDS, Django secret key), `-Storage` (S3 buckets, CloudFront; the versioned `PetFiles` bucket has a lifecycle rule that expires noncurrent versions after 7 days, removes expired delete markers and aborts incomplete multipart uploads after 1 day), `-Auth` (Cognito) and `-Api` (Lambdas, HTTP API with JWT authorizer; both Lambdas get `PET_FILES_BUCKET`, and only `ApiFunction` may put, get and delete `pets/*` objects, with no `s3:List*` or bucket-level access). The opt-in `PetStop-Dev-FacilityIngestion` stack is synthesized only with `-c facilityIngestion=true`. The account is bootstrapped, and `deploy.yml` deploys the stacks from `main` to the dev stage (see CI). |
-| CI | Backend Ruff lint/format, Django system check and PostgreSQL tests, plus an isolated Floci recovery suite; frontend lint/format, API and local behavior tests and static build; infra Prettier, `tsc` and template tests. These run on pull requests and pushes to main according to their workflow triggers. `deploy.yml` deploys `main` to the dev stage: `cdk deploy`, `migrate`, a health check, then the frontend build, S3 upload and CloudFront invalidation. `aws-test.yml` remains a manual AWS caller-identity check. |
+| CI | Backend Ruff lint/format, Django system check and PostgreSQL tests, plus an isolated Floci recovery suite; frontend lint/format, API and local behavior tests and static build; infra Prettier, `tsc` and template tests. These run on pull requests and pushes to main according to their workflow triggers. `deploy.yml` deploys `main` to the dev stage: `cdk deploy`, `migrate`, `load_catalogue`, a health check, then the frontend build, S3 upload and CloudFront invalidation. `aws-test.yml` remains a manual AWS caller-identity check. |
 
 Backend settings in `backend/config/settings.py`:
 
@@ -153,6 +154,10 @@ Backend settings in `backend/config/settings.py`:
 | Pet file uploads (2026-10-31) | The browser PUTs straight to the private `PetFiles` bucket through a presigned URL that signs the exact type and size, then calls a `complete` route that checks the stored object before the file appears. Keys hold only UUIDs. Locally, with no bucket set and `DEBUG` on, Django issues its own signed URLs and stores files in `backend/.local-storage/`. | Lambda caps request bodies near 6 MB, so files cannot pass through Django. The completion check means a listed file always exists and matches its declared type and size. The local backend lets every member run pet profiles without AWS credentials or an emulator. |
 | Local dev sign-in (2026-10-31) | `Authorization: Dev <alice\|bob\|mira>`, accepted only with `DJANGO_DEBUG=True`, `DJANGO_DEV_AUTH=true`, outside Lambda, and from a loopback client with no proxy headers. The frontend shows it only with `NEXT_PUBLIC_DEV_AUTH=true` on `localhost` or `127.0.0.1`. Real Cognito sign-in also works locally. | Lets members test pets offline and check owner isolation with two users side by side, without a path that could ever be enabled in AWS. |
 
-### Open
+### Interactive location search (implemented 8 November 2026; AWS deployment pending)
 
-Interactive location-search hosting: the local Django endpoint calls OneMap, but the deployed Django Lambda has no outbound internet. Recommendation for PR 3: agree an outside-VPC search Lambda behind the existing API Gateway with the infrastructure owner, preserving the `/api/v1/locations/search/` contract. This is not deployed or an agreed architecture change yet.
+`PetStop-Dev-Api` defines a dedicated image Lambda outside the VPC for public location search. API Gateway routes `GET /api/v1/locations/{proxy+}` to it; the handler accepts only `/api/v1/locations/search` and `/api/v1/locations/search/`, rejecting other paths. The frontend URL and response format stay unchanged. The protected default route and database-backed Lambdas retain their existing authentication and VPC configuration.
+
+`facilities.search_handler.handler` reuses `OneMapClient` with an injected Secrets Manager credential provider; it never starts Django or opens a database connection. The API stack owns a separate `LocationSearchCredentials` secret, exposed as `LocationSearchSecretArn`. It must be populated after deployment; ingestion's OneMap secret does not configure interactive search. Secret values are cached for 60 seconds, tokens until expiry or rejection. Provider authentication failures return safe 503 errors, not user-session 401 errors.
+
+API Gateway applies a shared, best-effort search-route throttle of 0.5 requests/second with a burst of five. This replaces the local Django endpoint's per-client throttle for AWS search and is not an account-wide OneMap quota coordinator. No NAT or database permissions are required. See `infra/README.md` for rollout and verification. No AWS deployment was performed as part of this implementation.

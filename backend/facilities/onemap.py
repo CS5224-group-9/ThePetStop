@@ -69,7 +69,8 @@ def _request_json(path, *, token=None, credentials=None):
 
 
 class OneMapClient:
-    def __init__(self):
+    def __init__(self, credentials=None):
+        self._credentials = credentials
         self._lock = Lock()
         self._token = None
         self._expires = 0
@@ -77,9 +78,12 @@ class OneMapClient:
         self._supplied_used = False
 
     def _get_token(self, *, rejected=None):
-        email = settings.ONEMAP_EMAIL.strip()
-        password = settings.ONEMAP_PASSWORD
-        supplied = settings.ONEMAP_ACCESS_TOKEN.strip()
+        if self._credentials is None:
+            email = settings.ONEMAP_EMAIL.strip()
+            password = settings.ONEMAP_PASSWORD
+            supplied = settings.ONEMAP_ACCESS_TOKEN.strip()
+        else:
+            email, password, supplied = self._credentials()
         with self._lock:
             configuration = (supplied, email, password)
             if self._configuration != configuration:

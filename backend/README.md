@@ -272,6 +272,8 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 | `DJANGO_DEBUG` | `True` locally. Anything else means off. |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames. |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call the API, such as the Next.js dev server. |
+| `PRODUCT_IMAGES_BUCKET_NAME` | Optional locally. S3 bucket used by the merchant image-upload endpoint. |
+| `PRODUCT_IMAGES_BASE_URL` | Optional locally. CloudFront base URL used to construct public catalogue image URLs. |
 | `DATABASE_URL` | Required locally. Matches `docker-compose.yml` by default. |
 | `COGNITO_ISSUER`, `COGNITO_CLIENT_ID` | Optional locally. Set them to the dev user pool (the `PetStop-Dev-Auth` stack outputs) to accept the frontend's bearer tokens; blank means only the admin session login works. |
 | `DJANGO_DEV_AUTH` | Local development only. `true` accepts `Authorization: Dev <alice\|bob\|mira>` instead of a Cognito token, but only with `DJANGO_DEBUG=True` and only from this computer (loopback host and client address). Django refuses to start if it is `true` inside AWS Lambda. Default `false`. See [Run pet profiles locally](#run-pet-profiles-locally). |
@@ -293,7 +295,7 @@ Load the committed fictional catalogue fixtures after applying migrations:
 uv run python .\manage.py load_catalogue
 ```
 
-The command is idempotent. The six fictional shops (`shop-1.json` to `shop-6.json`) have 24 products each, all in the same 24 comparison groups.
+The command is idempotent. The six fictional shops (`shop-1.json` to `shop-6.json`) have 24 products each: 12 shop-specific items and 12 in pairwise comparison groups (36 groups, each sold by exactly two shops). Product image delivery uses `PRODUCT_IMAGES_BASE_URL`; set it to a CloudFront base URL locally to return image URLs for populated `image_key` values. AWS configures the bucket name and CloudFront URL automatically.
 
 ### OneMap location search (local development)
 
@@ -325,3 +327,10 @@ See [the operations runbook](../docs/facility-ingestion-operations.md) for the
 isolated Floci suite, recovery commands, configuration and AWS release gate.
 
 An existing token alone works until rejected. On rejection, the server obtains a new token using the configured email/password and retries the search once. The replacement is reused in memory; `.env` is never rewritten. After a process restart, the configured starting token is tried again. With no renewal credentials, replace the token manually and restart Django. Generated tokens with a known expired timestamp are renewed before the next search; no scheduled refresh job is required.
+
+
+## AWS interactive location search
+
+`facilities.search_handler.handler` handles HTTP API v2 events outside the VPC without initializing Django or a database connection. It reuses `facilities.onemap.OneMapClient` with injected credentials read from `ONEMAP_SECRET_ARN`. The local Django endpoint continues to use `ONEMAP_EMAIL`, `ONEMAP_PASSWORD`, and optional `ONEMAP_ACCESS_TOKEN` from `.env`.
+
+Run the standalone handler tests with `uv run python -m unittest facilities.test_search_handler`; they require no database or Django settings. Existing OneMap tests remain in `facilities.tests.OneMapTests`. See `../infra/README.md` for deployment, the separate search secret, gateway throttling, and signed-out verification.
