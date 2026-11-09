@@ -110,7 +110,12 @@ export class ApiStack extends cdk.Stack {
 
     // Merchant image uploads use short-lived presigned PUT URLs. Product images
     // remain private in S3 and are read through the CloudFront OAC origin.
-    storage.productImagesBucket.grantPut(apiFunction, 'product-images/*');
+    apiFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:PutObject'],
+        resources: [storage.productImagesBucket.arnForObjects('product-images/*')],
+      }),
+    );
 
     const integration = new HttpLambdaIntegration('Django', apiFunction);
     // Search calls OneMap but never RDS, so it does not inherit shared's VPC config.
