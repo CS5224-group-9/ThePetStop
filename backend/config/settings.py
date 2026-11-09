@@ -171,6 +171,8 @@ STATIC_URL = "static/"
 # https://github.com/adamchainz/django-cors-headers
 
 CORS_ALLOWED_ORIGINS = env_list("DJANGO_CORS_ALLOWED_ORIGINS")
+PRODUCT_IMAGES_BUCKET_NAME = os.environ.get("PRODUCT_IMAGES_BUCKET_NAME", "")
+PRODUCT_IMAGES_BASE_URL = os.environ.get("PRODUCT_IMAGES_BASE_URL", "").rstrip("/")
 
 
 # Django REST Framework

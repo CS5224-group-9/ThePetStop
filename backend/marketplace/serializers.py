@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.utils.text import slugify
 from rest_framework import serializers
 
@@ -55,8 +56,10 @@ class ProductSerializer(serializers.ModelSerializer):
             return None
         if obj.image_key.startswith(("https://", "http://")):
             return obj.image_key
-        # Product image delivery is added by D3 with the product-images bucket.
-        return None
+        base_url = getattr(settings, "PRODUCT_IMAGES_BASE_URL", "").rstrip("/")
+        if not base_url:
+            return None
+        return f"{base_url}/{obj.image_key.lstrip('/')}"
 
 
 class ProductDetailSerializer(ProductSerializer):

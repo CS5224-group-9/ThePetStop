@@ -272,6 +272,8 @@ uv run python -c "from django.core.management.utils import get_random_secret_key
 | `DJANGO_DEBUG` | `True` locally. Anything else means off. |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames. |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call the API, such as the Next.js dev server. |
+| `PRODUCT_IMAGES_BUCKET_NAME` | Optional locally. S3 bucket used by the merchant image-upload endpoint. |
+| `PRODUCT_IMAGES_BASE_URL` | Optional locally. CloudFront base URL used to construct public catalogue image URLs. |
 | `DATABASE_URL` | Required locally. Matches `docker-compose.yml` by default. |
 | `COGNITO_ISSUER`, `COGNITO_CLIENT_ID` | Optional locally. Set them to the dev user pool (the `PetStop-Dev-Auth` stack outputs) to accept the frontend's bearer tokens; blank means only the admin session login works. |
 | `DJANGO_DEV_AUTH` | Local development only. `true` accepts `Authorization: Dev <alice\|bob\|mira>` instead of a Cognito token, but only with `DJANGO_DEBUG=True` and only from this computer (loopback host and client address). Django refuses to start if it is `true` inside AWS Lambda. Default `false`. See [Run pet profiles locally](#run-pet-profiles-locally). |
@@ -293,7 +295,7 @@ Load the committed fictional catalogue fixtures after applying migrations:
 uv run python .\manage.py load_catalogue
 ```
 
-The command is idempotent. D2's three fixtures contain 24 products per shop; D3 can add shops 4–6 in additional shop-N.json files.
+The command is idempotent. D2's three fixtures contain 24 products per shop, including shop-specific items and pairwise comparison groups; D3 can add shops 4–6 in additional shop-N.json files. Product image delivery uses `PRODUCT_IMAGES_BASE_URL`; set it to a CloudFront base URL locally to return image URLs for populated `image_key` values. AWS configures the bucket name and CloudFront URL automatically.
 
 ### OneMap location search (local development)
 

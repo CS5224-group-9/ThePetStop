@@ -45,9 +45,23 @@ export class StorageStack extends cdk.Stack {
       autoDeleteObjects: true,
     });
 
-    // Public catalogue images, served at /product-images/*. Object keys must start
-    // with product-images/.
-    this.productImagesBucket = new s3.Bucket(this, 'ProductImages', privateBucket);
+    // Publicly served catalogue images at /product-images/*. S3 stays private;
+    // object keys must start with product-images/.
+    this.productImagesBucket = new s3.Bucket(this, 'ProductImages', {
+      ...privateBucket,
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET, s3.HttpMethods.HEAD],
+          // The frontend's CloudFront domain is created from this bucket as an
+          // origin, so referencing it here would create a CloudFormation cycle.
+          // S3 stays private; the presigned URL is the write authorization.
+          allowedOrigins: ['*'],
+          allowedHeaders: ['content-type'],
+          exposedHeaders: ['etag'],
+          maxAge: 3000,
+        },
+      ],
+    });
 
     const indexRewrite = new cloudfront.Function(this, 'IndexRewrite', {
       runtime: cloudfront.FunctionRuntime.JS_2_0,

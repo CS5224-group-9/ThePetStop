@@ -65,6 +65,8 @@ export class ApiStack extends cdk.Stack {
         DB_SECRET_ARN: data.database.secret!.secretArn,
         DJANGO_ALLOWED_HOSTS: apiHost,
         DJANGO_CORS_ALLOWED_ORIGINS: storage.frontendUrl,
+        PRODUCT_IMAGES_BUCKET_NAME: storage.productImagesBucket.bucketName,
+        PRODUCT_IMAGES_BASE_URL: storage.frontendUrl,
         COGNITO_ISSUER: auth.issuer,
         COGNITO_CLIENT_ID: auth.client.userPoolClientId,
         COGNITO_JWKS: auth.jwks,
@@ -105,6 +107,10 @@ export class ApiStack extends cdk.Stack {
       data.djangoSecretKey.grantRead(fn);
       data.database.secret!.grantRead(fn);
     }
+
+    // Merchant image uploads use short-lived presigned PUT URLs. Product images
+    // remain private in S3 and are read through the CloudFront OAC origin.
+    storage.productImagesBucket.grantPut(apiFunction, 'product-images/*');
 
     const integration = new HttpLambdaIntegration('Django', apiFunction);
     // Search calls OneMap but never RDS, so it does not inherit shared's VPC config.

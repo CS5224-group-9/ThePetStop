@@ -32,13 +32,14 @@ The plan matches this stack and the decisions below (updated 2026-10-16). It lis
 Browser
   │
   ├── CloudFront ── S3 "web"              Next.js static export
-  │       └────── S3 "product-images"     public catalogue images
+  │       └────── S3 "product-images"     private catalogue images via CloudFront OAC
   │
   └── API Gateway (HTTP API) ── Cognito JWT authorizer on protected routes
           │
           └── Lambda "api"  (Django container image + apig-wsgi, in VPC)
                  ├── RDS PostgreSQL       private subnets
                  ├── Secrets Manager      DB credentials, Django secret key
+                 ├── S3 "product-images"  presigned PUT uploads; CloudFront serves reads
                  └── S3 "pet-files"       private: pet photos, vet reports (presigned URLs)
 
 EventBridge Scheduler, weekly (facility sync, Sprint 2)
@@ -55,7 +56,7 @@ CloudWatch Logs + dashboard + alarms · CloudTrail · AWS Budgets · RDS automat
 | --- | --- |
 | Secure authentication and access controls | Cognito sign-up and sign-in. API Gateway rejects missing or invalid tokens on protected routes. Django maps the token's `sub` to a local user, filters every private query by owner, and checks `merchant` group membership for merchant routes. |
 | Managed database | One RDS PostgreSQL instance (`db.t4g.micro`, single-AZ). Each Django app owns its own tables. |
-| Object storage for product images | S3 `product-images`, served through CloudFront. Pet photos and vet reports live in a separate private bucket. |
+| Object storage for product images | Private S3 `product-images`, served through CloudFront OAC. The API Lambda can issue presigned PUTs for `product-images/*`; browser upload CORS is configured on this bucket. Pet photos and vet reports stay in the separate private `pet-files` bucket. |
 | Serverless APIs | API Gateway HTTP API and Lambda. There are no always-on servers. |
 | Monitoring | CloudWatch metrics for Lambda and RDS, a dashboard, email alarms on errors and throttles, and CloudTrail for the account. |
 | Logging | Structured JSON logs from Django to CloudWatch Logs, with 14-day retention. No pet medical data or presigned URLs in logs. |

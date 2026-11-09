@@ -105,7 +105,7 @@ Required by the MVP brief: fictional shops only, no real brands or businesses pr
 - **30–40 product groups** shared by two or more shops at different prices, so "also sold by" shows real comparisons.
 - Product names may be generic, such as "Grain-free salmon dry cat food, 2 kg". Avoid real trademarks.
 
-D2 and D3 split the seed work. D2 has committed three fictional shops with 24 products each (72 rows) and 24 shared product groups; D3 adds shops 4 through 6 and can add further groups to reach the final target of 30 to 40. D2 owns the shared files and the catalogue migrations. File layout, so the two do not edit the same file:
+D2 and D3 split the seed work. D2 has three fictional shops with 24 products each (72 rows): each shop has 12 shop-specific products and shares only 12 offers across the other two shops. Those offers form 18 comparison groups, each sold by exactly two shops, rather than making every product appear at all merchants. D3 adds shops 4 through 6 and 12–22 further groups to reach the final target of 30 to 40. D2 owns the shared files and catalogue migrations. File layout, so the two do not edit the same file:
 
 ```text
 backend/marketplace/fixtures/catalogue/
@@ -115,10 +115,10 @@ backend/marketplace/fixtures/catalogue/
 │   ├── shop-1.json   # D2: shops 1–3
 │   ├── …
 │   └── shop-6.json   # D3: shops 4–6
-└── images/           # D3: one image per product, generated or royalty-free, named <merchant-slug>/<product-slug>.jpg
+└── images/           # generated or royalty-free assets, named <merchant-slug>/<product-slug>.<ext>
 ```
 
-`manage.py load_catalogue` is idempotent. It upserts categories, groups, merchants and products, and uploads images to the `product-images` bucket, or serves them locally in development.
+`manage.py load_catalogue` is idempotent and upserts categories, groups, merchants and products. Product images use `product-images/<merchant-slug>/<product-slug>.<ext>` object keys. The API Lambda has scoped `PutObject` permission and the bucket accepts browser PUT CORS for presigned uploads; the merchant upload endpoint is implemented separately by D1. Image assets are still being supplied/generated and are not yet included in these fixtures.
 
 If pet services are built, they are `Product` rows with `product_type = "service"` and a `duration_minutes`, in an extra "Pet Services" category, bought through the same checkout.
 
