@@ -359,32 +359,47 @@ test("map radius polygon is closed and follows the same distance calculation", (
 });
 
 test("merchant can add and remove only their own products", async () => {
-  const before = (await service.merchantProducts()).length;
-  const created = await service.createProduct({
-    name: "  House-brand dental chews  ",
-    description: "Sample listing for the merchant workspace.",
-    category: "c1",
-    price_cents: 1290,
-    stock: 12,
-  });
+  const { categories, merchants } = await service.catalogue();
+  const before = (await service.merchantProducts(categories, merchants)).length;
+  const created = await service.createProduct(
+    {
+      name: "  House-brand dental chews  ",
+      description: "Sample listing for the merchant workspace.",
+      category: "c1",
+      price_cents: 1290,
+      stock: 12,
+    },
+    categories,
+    merchants,
+  );
   assert.equal(created.merchant_id, "m0");
   assert.equal(created.name, "House-brand dental chews");
-  assert.equal((await service.merchantProducts()).length, before + 1);
+  assert.equal(
+    (await service.merchantProducts(categories, merchants)).length,
+    before + 1,
+  );
   assert.ok(
     (await service.catalogue()).products.some((p) => p.id === created.id),
   );
   await assert.rejects(
-    service.createProduct({
-      name: " ",
-      description: "",
-      category: "c1",
-      price_cents: 100,
-      stock: 1,
-    }),
+    service.createProduct(
+      {
+        name: " ",
+        description: "",
+        category: "c1",
+        price_cents: 100,
+        stock: 1,
+      },
+      categories,
+      merchants,
+    ),
   );
   await assert.rejects(service.deleteProduct("p-1-0-0"));
   await service.deleteProduct(created.id);
-  assert.equal((await service.merchantProducts()).length, before);
+  assert.equal(
+    (await service.merchantProducts(categories, merchants)).length,
+    before,
+  );
   assert.ok(
     (await service.catalogue()).products.every((p) => p.id !== created.id),
   );

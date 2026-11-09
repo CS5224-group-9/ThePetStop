@@ -1,7 +1,9 @@
 import type { createServices } from "./services.ts";
 import type {
   AppState,
+  Category,
   HealthRecord,
+  Merchant,
   Order,
   Pet,
   PetDocument,
@@ -522,7 +524,9 @@ export const localServices: ReturnType<typeof createServices> = {
   async order(id) {
     return copy(required(read().orders.find((o) => o.id === id)));
   },
-  async merchantProducts() {
+  async merchantProducts(categories: Category[], merchants: Merchant[]) {
+    void categories;
+    void merchants;
     return copy(read().products.filter((p) => p.merchant_id === "m0"));
   },
   async merchantOrders() {
@@ -540,7 +544,9 @@ export const localServices: ReturnType<typeof createServices> = {
         })),
     );
   },
-  async createProduct(input) {
+  async createProduct(input, categories: Category[], merchants: Merchant[]) {
+    void categories;
+    void merchants;
     const name = input.name.trim();
     if (!name) throw new Error("Enter a product name.");
     if (
