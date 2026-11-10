@@ -8,7 +8,8 @@ checkout changes nothing, so the client may retry with the same key.
 Concurrency: the user's row is locked first, so two checkouts by one user run one
 after the other, and the second sees the first's order under the same key. Product
 rows are then locked in primary-key order, so checkouts by different users that
-share products wait for each other instead of deadlocking.
+share products wait for each other instead of deadlocking. Merchant product edits
+take the same product lock, so they never save stock read before a checkout.
 
 Payment is simulated. No money moves; the `SIM-` reference says so.
 """

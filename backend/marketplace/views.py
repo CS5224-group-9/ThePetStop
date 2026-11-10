@@ -164,7 +164,15 @@ class OwnedMerchantProductDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = MerchantProductUpdateSerializer
 
     def get_queryset(self):
-        return owned_products(self.request.user)
+        products = owned_products(self.request.user)
+        if self.request.method == "PATCH":
+            # Same row lock as checkout, so a price edit cannot save stale stock
+            products = products.select_for_update(of=("self",))
+        return products
+
+    def update(self, request, *args, **kwargs):
+        with transaction.atomic():
+            return super().update(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         instance.active = False

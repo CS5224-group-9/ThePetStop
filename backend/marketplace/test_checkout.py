@@ -1,11 +1,15 @@
 import threading
+import time
+from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TransactionTestCase
 from rest_framework.test import APIClient, APITestCase
 
 from . import checkout
-from .models import CartItem, MerchantOrder, Order, OrderItem, Product
+from .models import CartItem, Merchant, MerchantOrder, Order, OrderItem, Product
+from .serializers import MerchantProductUpdateSerializer
 from .test_cart import API, MarketplaceFixtures
 
 SHIPPING = {
@@ -309,3 +313,79 @@ class ConcurrentCheckoutTests(MarketplaceFixtures, TransactionTestCase):
         )
         self.assertEqual(statuses, [201, 409])
         self.assertEqual(Product.objects.get(pk=self.toy.pk).stock, 1)
+
+    def overlap(self, pause_at, first, second):
+        """Pause `first` at `pause_at`, run `second`, then let `first` finish.
+
+        `first` resumes once `second` is done, or once `second` is blocked on a
+        lock, which means `first` holds it. Each job is (user, send(client)).
+        """
+        owner, name = pause_at
+        original = getattr(owner, name)
+        paused, second_done = threading.Event(), threading.Event()
+
+        def second_is_blocked():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted)"
+                )
+                return cursor.fetchone()[0]
+
+        def pause(*args, **kwargs):
+            paused.set()
+            deadline = time.monotonic() + 30
+            while not (second_done.is_set() or second_is_blocked()):
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.05)
+            return original(*args, **kwargs)
+
+        results = {}
+
+        def run(label, user, send):
+            client = APIClient()
+            client.force_authenticate(user)
+            try:
+                results[label] = send(client).status_code
+            finally:
+                connection.close()
+                if label == "second":
+                    second_done.set()
+
+        with mock.patch.object(owner, name, pause):
+            a = threading.Thread(target=run, args=("first", *first))
+            a.start()
+            self.assertTrue(paused.wait(timeout=30))
+            b = threading.Thread(target=run, args=("second", *second))
+            b.start()
+            a.join()
+            b.join()
+        return results["first"], results["second"]
+
+    def checkout_as(self, key):
+        return lambda client: client.post(
+            API + "checkout/",
+            SHIPPING,
+            format="json",
+            headers={"Idempotency-Key": key},
+        )
+
+    def test_price_edit_during_checkout_keeps_sold_stock(self):
+        owner = get_user_model().objects.create_user(username="harbour-owner")
+        Merchant.objects.filter(pk=self.harbour.pk).update(owner=owner)
+        self.add(self.alice, self.kibble, 2)
+
+        def edit_price(client):
+            return client.patch(
+                API + f"merchant/products/{self.kibble.pk}/",
+                {"price_cents": 2400},
+                format="json",
+            )
+
+        statuses = self.overlap(
+            (MerchantProductUpdateSerializer, "update"),
+            (owner, edit_price),
+            (self.alice, self.checkout_as(KEY)),
+        )
+        self.assertEqual(statuses, (200, 201))
+        kibble = Product.objects.get(pk=self.kibble.pk)
+        self.assertEqual((kibble.price_cents, kibble.stock), (2400, 3))
