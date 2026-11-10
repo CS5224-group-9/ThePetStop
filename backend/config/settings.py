@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import dj_database_url
+from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
 from config.dev_auth import authentication_classes, dev_auth_enabled
@@ -171,6 +172,10 @@ STATIC_URL = "static/"
 # https://github.com/adamchainz/django-cors-headers
 
 CORS_ALLOWED_ORIGINS = env_list("DJANGO_CORS_ALLOWED_ORIGINS")
+# Checkout retries send Idempotency-Key. In AWS, API Gateway answers preflights
+# with its own list (infra/lib/api-stack.ts); this covers local runserver.
+CORS_ALLOW_HEADERS = (*default_headers, "idempotency-key")
+
 PRODUCT_IMAGES_BUCKET_NAME = os.environ.get("PRODUCT_IMAGES_BUCKET_NAME", "")
 PRODUCT_IMAGES_BASE_URL = os.environ.get("PRODUCT_IMAGES_BASE_URL", "").rstrip("/")
 

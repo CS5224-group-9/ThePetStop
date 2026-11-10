@@ -111,6 +111,13 @@ test('Cognito client is public with code flow and has both groups', () => {
   }
 });
 
+test('API preflight allows the checkout Idempotency-Key header', () => {
+  const [httpApi] = Object.values(t.api.findResources('AWS::ApiGatewayV2::Api'));
+  expect(httpApi.Properties.CorsConfiguration.AllowHeaders).toEqual(
+    expect.arrayContaining(['authorization', 'content-type', 'idempotency-key']),
+  );
+});
+
 test('catch-all route requires a JWT; health and preflights are public', () => {
   t.api.hasResourceProperties('AWS::ApiGatewayV2::Route', {
     RouteKey: '$default',
@@ -132,6 +139,8 @@ test('catch-all route requires a JWT; health and preflights are public', () => {
   );
   for (const routeKey of routeKeys) {
     expect(routeKey).not.toMatch(/pets|reminders/);
+    // Cart, checkout and orders are private too
+    expect(routeKey).not.toMatch(/cart|checkout|orders/);
   }
 });
 

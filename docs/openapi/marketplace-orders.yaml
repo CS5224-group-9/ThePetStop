@@ -1,0 +1,298 @@
+openapi: 3.1.0
+info:
+  title: ThePetStop Cart, Checkout and Orders API
+  version: 0.1.0
+  description: >-
+    Private, user-scoped endpoints for the multi-merchant basket, simulated
+    checkout and order history. Every operation requires an authenticated
+    user. Every query is filtered by that user: another user's cart line or
+    order returns 404 `not_found`, never 403. All routes end in a slash.
+    Lists are paginated with 20 items per page. Amounts are integer cents
+    (SGD). Timestamps are ISO 8601 with the Asia/Singapore offset (+08:00).
+    Every response carries `Cache-Control: no-store`.
+
+
+    Prices and totals are always computed by the server. The cart shows the
+    current catalogue price; an order keeps the name and unit price copied at
+    checkout, so later catalogue edits do not change history.
+
+
+    Payment is simulated. A successful checkout marks the order and every
+    merchant sub-order `paid` and sets a `SIM-` payment reference. No money
+    moves and no payout is created.
+
+
+    Validation errors use 400 `invalid` with `details` keyed by field. Other
+    errors use `{"error": {"code", "message", "details": {}}}`, where
+    `message` is a sentence the UI can show as is.
+servers:
+  - url: /api/v1
+security:
+  - bearer: []
+paths:
+  /cart/:
+    get:
+      summary: The user's cart, grouped by merchant
+      responses:
+        "200":
+          description: Lines grouped by merchant (ordered by merchant name, then product name)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+    delete:
+      summary: Empty the cart
+      responses:
+        "204": { description: Emptied }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+  /cart/items/:
+    post:
+      summary: Add a product
+      description: >-
+        Adding a product already in the cart increases its quantity. The new
+        total quantity must be at most the product's stock and at most 99.
+        An inactive product, a product of an inactive merchant, or an unknown
+        id is 400 `invalid` with `details.product`. A stock or quantity
+        problem is 400 `invalid` with `details.quantity` (for example "Only 5
+        left in stock."). Two simultaneous first adds of one product may get
+        `details.non_field_errors: ["This item changed. Refresh and try
+        again."]`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product]
+              properties:
+                product: { type: integer }
+                quantity: { type: integer, minimum: 1, maximum: 99, default: 1 }
+      responses:
+        "201":
+          description: The whole cart after the change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+  /cart/items/{product_id}/:
+    parameters:
+      - { name: product_id, in: path, required: true, schema: { type: integer } }
+    patch:
+      summary: Set the quantity of a product in the cart
+      description: >-
+        The quantity must be 1 to 99 and at most the product's stock. A
+        product withdrawn since it was added is 400 with `details.product`;
+        remove it instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 1, maximum: 99 }
+      responses:
+        "200":
+          description: The whole cart after the change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Remove a product from the cart
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /checkout/:
+    post:
+      summary: Place a paid (simulated) order from the whole cart
+      description: >-
+        Runs in one transaction: locks the cart's products, rejects the
+        checkout if any is unavailable or short of stock, creates the order,
+        one merchant sub-order per shop and the order items, decrements stock,
+        empties the cart and runs the simulated payment. A rejected checkout
+        changes nothing.
+
+
+        The client generates one `Idempotency-Key` per checkout attempt and
+        reuses it on retries. A key this user already used returns that order
+        with 200 and does nothing else, even if the cart has changed since.
+        A rejected checkout does not use up its key. Keys are per user.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 8 to 80 letters, digits, hyphens or underscores (a UUID works)
+          schema: { type: string, pattern: "^[A-Za-z0-9_-]{8,80}$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                [shipping_name, shipping_phone, shipping_address, shipping_postal_code]
+              properties:
+                shipping_name: { type: string, maxLength: 160 }
+                shipping_phone: { type: string, pattern: "^\\+?[0-9]{8,15}$" }
+                shipping_address: { type: string, maxLength: 500 }
+                shipping_postal_code: { type: string, pattern: "^[0-9]{6}$" }
+      responses:
+        "201":
+          description: Order placed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "200":
+          description: Retry with a key already used; the original order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400":
+          description: >-
+            `invalid` (shipping fields, or `details.idempotency_key` for a
+            missing or malformed header) or `cart_empty` ("Your basket is
+            empty.")
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "409":
+          description: >-
+            `product_unavailable` (a product or its shop was withdrawn) or
+            `insufficient_stock` (sold out, or less stock than the cart
+            quantity). The message names the product and shop and says what to
+            change, for example "Only 2 of Rope toy from Island Pets left. Lower
+            the quantity in your basket to continue."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /orders/:
+    get:
+      summary: The user's orders, newest first
+      responses:
+        "200":
+          description: Paginated orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  next: { type: [string, "null"] }
+                  previous: { type: [string, "null"] }
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+  /orders/{id}/:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: One of the user's orders
+      responses:
+        "200":
+          description: The order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: Cognito access token (locally, `Authorization: Dev <handle>` when dev sign-in is on)
+  responses:
+    Unauthenticated:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found, or not the user's
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Invalid:
+      description: Validation error (`invalid`), details keyed by field
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object }
+    MerchantRef:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+    Cart:
+      type: object
+      properties:
+        merchants:
+          type: array
+          items:
+            type: object
+            properties:
+              merchant: { $ref: "#/components/schemas/MerchantRef" }
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    product:
+                      description: The catalogue product row (same shape as GET products/), with current price and stock
+                      type: object
+                    quantity: { type: integer }
+        total_cents:
+          type: integer
+          description: Sum of current price × quantity; an estimate until checkout
+    Order:
+      type: object
+      properties:
+        id: { type: integer }
+        status: { type: string, enum: [pending_payment, paid, cancelled] }
+        created_at: { type: string, format: date-time }
+        total_cents: { type: integer }
+        shipping_name: { type: string }
+        shipping_phone: { type: string }
+        shipping_address: { type: string }
+        shipping_postal_code: { type: string }
+        payment_ref: { type: string, description: "Simulated, e.g. SIM-1A2B3C4D5E6F" }
+        paid_at: { type: [string, "null"], format: date-time }
+        merchant_orders:
+          type: array
+          description: One per shop, ordered by merchant name
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              merchant: { $ref: "#/components/schemas/MerchantRef" }
+              status:
+                type: string
+                enum: [paid, processing, shipped, delivered, cancelled]
+              subtotal_cents: { type: integer }
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    product: { type: integer }
+                    product_name: { type: string, description: Copied at checkout }
+                    unit_price_cents: { type: integer, description: Copied at checkout }
+                    quantity: { type: integer }

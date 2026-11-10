@@ -79,7 +79,7 @@ From `infra/`, with `AWS_PROFILE` set:
 
 1. runs `cdk deploy --all`, which builds and pushes the backend image;
 2. runs `migrate`, then `load_catalogue`, through `ManageFunction`, and fails if either raises; the catalogue load upserts the fictional shops from `backend/marketplace/fixtures/catalogue/`, so fixture values overwrite edits to those rows;
-3. checks that `<ApiBaseUrl>health/` answers;
+3. checks that `<ApiBaseUrl>health/` answers, that `merchants/` lists all six seeded shops, that the `checkout/` preflight from the frontend origin allows `Idempotency-Key`, and that `cart/`, `checkout/` and `orders/` return 401 without a token;
 4. builds the frontend in API mode from the stack outputs; no frontend settings are stored in GitHub;
 5. uploads it to the web bucket and invalidates CloudFront.
 
@@ -92,6 +92,17 @@ Remove-Item cdk-assume.json
 ```
 
 `.github/workflows/infra-ci.yml` runs Prettier, `tsc` and the template tests on every pull request.
+
+### Checking the cart and order flow after a deploy
+
+The workflow cannot sign in, so check the signed-in flow by hand on `FrontendUrl`:
+
+1. Sign in with Cognito, add products from at least three shops, change a quantity and remove one line.
+2. Check out. The order page shows "Paid" with one section per shop, and the basket is empty.
+3. Open order history and the order detail; reload both.
+4. Sign in as a second user: the first user's order is not listed, and its detail URL shows not found.
+5. Double-click "Place order" on a new checkout: order history gains one order, not two.
+6. In CloudWatch, the `ApiFunction` log group shows no errors for these requests.
 
 ## Deploying by hand
 

@@ -2,7 +2,7 @@
 
 ## Standalone frontend UI
 
-The frontend defaults to `NEXT_PUBLIC_DATA_SOURCE=local` for sample pets, fictional merchant catalogues, care records/reminders, browser-persisted cart and simulated orders, merchant editing and storefront pages. Facility listings and location search use the public Django API in both modes; there are no sample facilities or fallback listings. Configure `NEXT_PUBLIC_API_BASE_URL` and run Django to use the directory. Set `NEXT_PUBLIC_DATA_SOURCE=api` to use the API/Cognito boundary described below; public marketplace, facility listing and pet profile APIs are implemented, while other feature endpoints remain outstanding. Local mode does not replace API authorization or implement AWS services.
+The frontend defaults to `NEXT_PUBLIC_DATA_SOURCE=local` for sample pets, fictional merchant catalogues, care records/reminders, browser-persisted cart and simulated orders, merchant editing and storefront pages. Facility listings and location search use the public Django API in both modes; there are no sample facilities or fallback listings. Configure `NEXT_PUBLIC_API_BASE_URL` and run Django to use the directory. Set `NEXT_PUBLIC_DATA_SOURCE=api` to use the API/Cognito boundary described below; public marketplace, cart, checkout, order history, facility listing and pet profile APIs are implemented, while other feature endpoints remain outstanding. Local mode does not replace API authorization or implement AWS services.
 
 Updated 2026-10-31. Scope: production-oriented frontend, with backend/infrastructure implemented separately. The data source is chosen at build time; API mode never falls back to sample data.
 
@@ -34,7 +34,7 @@ API mode can be tested offline without Cognito through a development sign-in tha
 
 ## Contract status
 
-Routes, ownership rules, pagination and integer-cent conventions follow `repository-structure.md`. The public marketplace catalogue, facility listing and pet profile endpoints (pets, photos, records, documents and reminders) are implemented in Django. The pet contract is [openapi/pets.yaml](openapi/pets.yaml), which wins over the summary below. Cart, checkout, order and merchant-write endpoints remain unimplemented. The catalogue wire shapes below should be checked against the serializers; the remaining wire shapes are **an explicit integration proposal**, derived from the draft data model, not generated backend types. Do not declare the complete application production-ready from frontend checks alone.
+Routes, ownership rules, pagination and integer-cent conventions follow `repository-structure.md`. The public marketplace catalogue, facility listing and pet profile endpoints (pets, photos, records, documents and reminders) are implemented in Django. The cart, checkout and order history endpoints are implemented too. The pet contract is [openapi/pets.yaml](openapi/pets.yaml) and the cart, checkout and orders contract is [openapi/marketplace-orders.yaml](openapi/marketplace-orders.yaml); both win over the summaries below. Merchant order endpoints remain unimplemented. The catalogue wire shapes below should be checked against the serializers; the remaining wire shapes are **an explicit integration proposal**, derived from the draft data model, not generated backend types. Do not declare the complete application production-ready from frontend checks alone.
 
 All lists return `{count, next, previous, results}`. `next` must remain on the configured API origin and under the configured base path. IDs may be strings or integers. Errors return `{error:{code,message,details}}`, with 401 for unauthenticated requests, 403 for insufficient role, and 404 for another owner’s private record. API redirects are rejected. Request/response field names are snake_case; amounts and stock are nonnegative integers.
 
@@ -64,6 +64,8 @@ Validation errors are 400 `invalid` with `details` keyed by field. A field's val
 
 ### Basket, checkout and orders
 
+Implemented in Django; [openapi/marketplace-orders.yaml](openapi/marketplace-orders.yaml) has the full contract, including error codes (`cart_empty`, `product_unavailable`, `insufficient_stock`) whose messages the checkout page can show as is. Cart writes return the whole cart. A retried checkout with a used key returns the original order with 200.
+
 `GET cart/` returns:
 
 ```json
@@ -75,6 +77,12 @@ Validation errors are 400 `invalid` with `details` keyed by field. A field's val
 - `GET orders/`, `GET orders/{id}/` and checkout response: `{id,status,created_at,total_cents,shipping_name,shipping_address,shipping_postal_code,merchant_orders:[{id,merchant:{id,name,slug},status,items:[{product:<id>,product_name,unit_price_cents,quantity}]}]}`. Order `status` follows the draft model (`pending_payment`, `paid`, `cancelled`); the payment-success badge appears only for `paid`. Merchant sub-orders are keyed by merchant IDs, not names. Item names/prices are server-side history snapshots. The UI’s basket total is an estimate from returned line items; the saved order total is always the server value. Payment remains simulated.
 
 ### Merchant resources
+
+Django implements the product and merchant sub-order routes below. Access requires
+ownership of an active shop; a merchant group alone does not grant access. For
+local dev sign-in, run `load_catalogue` then `seed_merchant` to link Mira to
+Harbour Paws Supply. Sub-order lists are paginated and contain only owned shops;
+fulfilment updates enforce the sequence below under a database row lock.
 
 - `GET merchant/products/`: product rows belonging to the authenticated merchant only.
 - `POST merchant/products/`: `{name,description,category,price_cents,stock}` creates a product for the authenticated merchant. `category` is the category ID. Image upload and product-group assignment remain later work.

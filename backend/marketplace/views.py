@@ -1,19 +1,35 @@
-from django.db.models import Q
+import re
+
+from django.db import transaction
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import Category, Merchant, Product
+from . import checkout
+from .models import CartItem, Category, Merchant, MerchantOrder, Order, Product
 from .permissions import IsMerchant
 from .serializers import (
+    MAX_CART_QUANTITY,
+    CartAddSerializer,
+    CartQuantitySerializer,
     CategorySerializer,
+    MerchantOrderStatusSerializer,
     MerchantProductUpdateSerializer,
     MerchantProductWriteSerializer,
     MerchantSerializer,
+    OrderSerializer,
+    OwnedMerchantOrderSerializer,
     ProductDetailSerializer,
     ProductSerializer,
+    ShippingSerializer,
+    cart_payload,
 )
+
+IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 
 
 class CategoryListView(generics.ListAPIView):
@@ -147,8 +163,216 @@ class OwnedMerchantProductDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = MerchantProductUpdateSerializer
 
     def get_queryset(self):
-        return owned_products(self.request.user)
+        products = owned_products(self.request.user)
+        if self.request.method == "PATCH":
+            # Same row lock as checkout, so a price edit cannot save stale stock
+            products = products.select_for_update(of=("self",))
+        return products
+
+    def update(self, request, *args, **kwargs):
+        with transaction.atomic():
+            return super().update(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         instance.active = False
         instance.save(update_fields=["active"])
+
+
+# Cart, checkout and orders: private to the signed-in user (the default permission)
+
+
+class NoStoreMixin:
+    """Private data: every response, errors included, is `no-store`."""
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+def stock_error(product: Product, quantity: int) -> ValidationError | None:
+    if quantity <= product.stock:
+        return None
+    message = (
+        "This item is out of stock."
+        if product.stock == 0
+        else f"Only {product.stock} left in stock."
+    )
+    return ValidationError({"quantity": [message]})
+
+
+class CartView(NoStoreMixin, APIView):
+    def get(self, request):
+        return Response(cart_payload(request.user, {"request": request}))
+
+    def delete(self, request):
+        with checkout.locked_cart(request.user):
+            CartItem.objects.filter(user=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CartItemListView(NoStoreMixin, APIView):
+    def post(self, request):
+        """Add a product; adding one already in the cart increases its quantity."""
+        serializer = CartAddSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        product = serializer.validated_data["product"]
+        quantity = serializer.validated_data["quantity"]
+        with checkout.locked_cart(request.user):
+            line = CartItem.objects.filter(user=request.user, product=product).first()
+            total = quantity + (line.quantity if line else 0)
+            if total > MAX_CART_QUANTITY:
+                raise ValidationError(
+                    {
+                        "quantity": [
+                            f"You can add at most {MAX_CART_QUANTITY} of one item."
+                        ]
+                    }
+                )
+            if error := stock_error(product, total):
+                raise error
+            if line:
+                line.quantity = total
+                line.save(update_fields=["quantity"])
+            else:
+                CartItem.objects.create(
+                    user=request.user, product=product, quantity=total
+                )
+        return Response(
+            cart_payload(request.user, {"request": request}),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CartItemDetailView(NoStoreMixin, APIView):
+    def get_line(self, request, product_id):
+        return get_object_or_404(
+            CartItem.objects.select_related("product__merchant"),
+            user=request.user,
+            product_id=product_id,
+        )
+
+    def patch(self, request, product_id):
+        """Set the quantity of a product already in the cart."""
+        serializer = CartQuantitySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        quantity = serializer.validated_data["quantity"]
+        with checkout.locked_cart(request.user):
+            line = self.get_line(request, product_id)
+            product = line.product
+            if not (product.active and product.merchant.active):
+                raise ValidationError(
+                    {
+                        "product": [
+                            "This item is no longer available. Remove it instead."
+                        ]
+                    }
+                )
+            if error := stock_error(product, quantity):
+                raise error
+            line.quantity = quantity
+            line.save(update_fields=["quantity"])
+        return Response(cart_payload(request.user, {"request": request}))
+
+    def delete(self, request, product_id):
+        with checkout.locked_cart(request.user):
+            self.get_line(request, product_id).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CheckoutView(NoStoreMixin, APIView):
+    def post(self, request):
+        """Place a paid (simulated) order from the whole cart."""
+        key = request.headers.get("Idempotency-Key", "").strip()
+        if not IDEMPOTENCY_KEY.match(key):
+            raise ValidationError(
+                {
+                    "idempotency_key": [
+                        "Send an Idempotency-Key header of 8 to 80 letters, "
+                        "digits, hyphens or underscores."
+                    ]
+                }
+            )
+        serializer = ShippingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order, created = checkout.place_order(
+            request.user, serializer.validated_data, key
+        )
+        order = order_queryset(request.user).get(pk=order.pk)
+        return Response(
+            OrderSerializer(order).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+def order_queryset(user):
+    return (
+        Order.objects.filter(user=user)
+        .prefetch_related(
+            Prefetch(
+                "merchant_orders",
+                queryset=MerchantOrder.objects.select_related(
+                    "merchant"
+                ).prefetch_related("items"),
+            )
+        )
+        .order_by("-created_at", "-pk")
+    )
+
+
+class OrderListView(NoStoreMixin, generics.ListAPIView):
+    serializer_class = OrderSerializer
+
+    def get_queryset(self):
+        return order_queryset(self.request.user)
+
+
+class OrderDetailView(NoStoreMixin, generics.RetrieveAPIView):
+    serializer_class = OrderSerializer
+
+    def get_queryset(self):
+        # Another user's order is a 404, never a 403
+        return order_queryset(self.request.user)
+
+
+def owned_merchant_orders(user):
+    return (
+        MerchantOrder.objects.filter(merchant__owner=user, merchant__active=True)
+        .select_related("merchant", "order")
+        .prefetch_related("items")
+        .order_by("-order__created_at", "-pk")
+    )
+
+
+class OwnedMerchantOrderListView(NoStoreMixin, generics.ListAPIView):
+    permission_classes = [IsAuthenticated, IsMerchant]
+    serializer_class = OwnedMerchantOrderSerializer
+
+    def get_queryset(self):
+        return owned_merchant_orders(self.request.user)
+
+
+class OwnedMerchantOrderDetailView(NoStoreMixin, APIView):
+    permission_classes = [IsAuthenticated, IsMerchant]
+
+    def patch(self, request, pk):
+        serializer = MerchantOrderStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            row = get_object_or_404(
+                owned_merchant_orders(request.user).select_for_update(of=("self",)),
+                pk=pk,
+            )
+            transitions = {
+                MerchantOrder.PAID: MerchantOrder.PROCESSING,
+                MerchantOrder.PROCESSING: MerchantOrder.SHIPPED,
+                MerchantOrder.SHIPPED: MerchantOrder.DELIVERED,
+            }
+            next_status = serializer.validated_data["status"]
+            if transitions.get(row.status) != next_status:
+                raise ValidationError(
+                    {"status": ["Move to the next fulfilment status in sequence."]}
+                )
+            row.status = next_status
+            row.save(update_fields=["status", "updated_at"])
+        return Response(OwnedMerchantOrderSerializer(row).data)

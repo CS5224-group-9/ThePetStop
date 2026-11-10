@@ -712,3 +712,17 @@ class DevAuthenticationTests(APITestCase):
                 "Dev alice", HTTP_HOST="[::1]:8000", REMOTE_ADDR="::1"
             )
         self.assertEqual(response.status_code, 200)
+
+
+class CorsPreflightTests(TestCase):
+    @override_settings(CORS_ALLOWED_ORIGINS=["http://localhost:3000"])
+    def test_checkout_preflight_allows_idempotency_key(self):
+        response = self.client.options(
+            "/api/v1/checkout/",
+            HTTP_ORIGIN="http://localhost:3000",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization,idempotency-key",
+        )
+        allowed = response["Access-Control-Allow-Headers"].split(", ")
+        self.assertIn("idempotency-key", allowed)
+        self.assertIn("authorization", allowed)
