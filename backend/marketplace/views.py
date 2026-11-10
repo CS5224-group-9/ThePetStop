@@ -1,6 +1,6 @@
 import re
 
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
@@ -29,7 +29,6 @@ from .serializers import (
     cart_payload,
 )
 
-CONFLICT_MESSAGE = "This item changed. Refresh and try again."
 IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 
 
@@ -207,7 +206,8 @@ class CartView(NoStoreMixin, APIView):
         return Response(cart_payload(request.user, {"request": request}))
 
     def delete(self, request):
-        CartItem.objects.filter(user=request.user).delete()
+        with checkout.locked_cart(request.user):
+            CartItem.objects.filter(user=request.user).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -218,34 +218,26 @@ class CartItemListView(NoStoreMixin, APIView):
         serializer.is_valid(raise_exception=True)
         product = serializer.validated_data["product"]
         quantity = serializer.validated_data["quantity"]
-        try:
-            with transaction.atomic():
-                line = (
-                    CartItem.objects.select_for_update()
-                    .filter(user=request.user, product=product)
-                    .first()
+        with checkout.locked_cart(request.user):
+            line = CartItem.objects.filter(user=request.user, product=product).first()
+            total = quantity + (line.quantity if line else 0)
+            if total > MAX_CART_QUANTITY:
+                raise ValidationError(
+                    {
+                        "quantity": [
+                            f"You can add at most {MAX_CART_QUANTITY} of one item."
+                        ]
+                    }
                 )
-                total = quantity + (line.quantity if line else 0)
-                if total > MAX_CART_QUANTITY:
-                    raise ValidationError(
-                        {
-                            "quantity": [
-                                f"You can add at most {MAX_CART_QUANTITY} of one item."
-                            ]
-                        }
-                    )
-                if error := stock_error(product, total):
-                    raise error
-                if line:
-                    line.quantity = total
-                    line.save(update_fields=["quantity"])
-                else:
-                    CartItem.objects.create(
-                        user=request.user, product=product, quantity=total
-                    )
-        except IntegrityError as exc:
-            # A concurrent add created the row first
-            raise ValidationError({"non_field_errors": [CONFLICT_MESSAGE]}) from exc
+            if error := stock_error(product, total):
+                raise error
+            if line:
+                line.quantity = total
+                line.save(update_fields=["quantity"])
+            else:
+                CartItem.objects.create(
+                    user=request.user, product=product, quantity=total
+                )
         return Response(
             cart_payload(request.user, {"request": request}),
             status=status.HTTP_201_CREATED,
@@ -262,23 +254,29 @@ class CartItemDetailView(NoStoreMixin, APIView):
 
     def patch(self, request, product_id):
         """Set the quantity of a product already in the cart."""
-        line = self.get_line(request, product_id)
         serializer = CartQuantitySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         quantity = serializer.validated_data["quantity"]
-        product = line.product
-        if not (product.active and product.merchant.active):
-            raise ValidationError(
-                {"product": ["This item is no longer available. Remove it instead."]}
-            )
-        if error := stock_error(product, quantity):
-            raise error
-        line.quantity = quantity
-        line.save(update_fields=["quantity"])
+        with checkout.locked_cart(request.user):
+            line = self.get_line(request, product_id)
+            product = line.product
+            if not (product.active and product.merchant.active):
+                raise ValidationError(
+                    {
+                        "product": [
+                            "This item is no longer available. Remove it instead."
+                        ]
+                    }
+                )
+            if error := stock_error(product, quantity):
+                raise error
+            line.quantity = quantity
+            line.save(update_fields=["quantity"])
         return Response(cart_payload(request.user, {"request": request}))
 
     def delete(self, request, product_id):
-        self.get_line(request, product_id).delete()
+        with checkout.locked_cart(request.user):
+            self.get_line(request, product_id).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

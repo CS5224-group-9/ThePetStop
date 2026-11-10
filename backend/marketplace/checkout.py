@@ -5,8 +5,9 @@ shop and an `OrderItem` per line, with names and prices copied so later catalogu
 edits do not change history. Everything runs in one transaction: a rejected
 checkout changes nothing, so the client may retry with the same key.
 
-Concurrency: the user's row is locked first, so two checkouts by one user run one
-after the other, and the second sees the first's order under the same key. Product
+Concurrency: the user's row is locked first (`locked_cart`), so two checkouts by
+one user run one after the other, and the second sees the first's order under the
+same key. Cart changes take the same lock, so none lands mid-checkout. Product
 rows are then locked in primary-key order, so checkouts by different users that
 share products wait for each other instead of deadlocking. Merchant product edits
 take the same product lock, so they never save stock read before a checkout.
@@ -16,6 +17,7 @@ Payment is simulated. No money moves; the `SIM-` reference says so.
 
 import uuid
 from collections import defaultdict
+from contextlib import contextmanager
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -48,15 +50,22 @@ def find_order(user, key: str) -> Order | None:
     return Order.objects.filter(user=user, idempotency_key=key).first()
 
 
+@contextmanager
+def locked_cart(user):
+    """A transaction holding the user's row lock, taken before reading the cart."""
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().filter(pk=user.pk).first()
+        yield
+
+
 def place_order(user, shipping: dict, key: str) -> tuple[Order, bool]:
     """Return (order, created). A key the user already used returns its order."""
     existing = find_order(user, key)
     if existing is not None:
         return existing, False
     try:
-        with transaction.atomic():
-            # Serialises this user's checkouts; re-check the key once we hold it
-            get_user_model().objects.select_for_update().filter(pk=user.pk).first()
+        with locked_cart(user):
+            # Re-check the key once we hold the lock
             existing = find_order(user, key)
             if existing is not None:
                 return existing, False

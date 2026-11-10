@@ -88,7 +88,7 @@ Known gaps: deleting a `User` deletes its pets in bulk without deleting their fi
 
 Checkout runs in one database transaction:
 
-1. Lock the user's cart items' products (`select_for_update`).
+1. Lock the user's row, then the cart items' products (`select_for_update`). Cart changes take the same user lock and merchant product edits the same product lock, so neither can overlap a checkout.
 2. Reject the checkout with a clear error if any product is inactive or out of stock.
 3. Create the `Order`, then one `MerchantOrder` per merchant, then the `OrderItem`s with copied names and prices.
 4. Decrement stock and clear the cart.

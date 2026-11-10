@@ -389,3 +389,21 @@ class ConcurrentCheckoutTests(MarketplaceFixtures, TransactionTestCase):
         self.assertEqual(statuses, (200, 201))
         kibble = Product.objects.get(pk=self.kibble.pk)
         self.assertEqual((kibble.price_cents, kibble.stock), (2400, 3))
+
+    def test_cart_edit_during_checkout_waits_for_it(self):
+        self.add(self.alice, self.kibble, 1)
+
+        def raise_quantity(client):
+            return client.patch(
+                API + f"cart/items/{self.kibble.pk}/", {"quantity": 3}, format="json"
+            )
+
+        statuses = self.overlap(
+            (checkout, "_check_line"),
+            (self.alice, self.checkout_as(KEY)),
+            (self.alice, raise_quantity),
+        )
+        # The edit runs after checkout, so it finds the line gone, not lost
+        self.assertEqual(statuses, (201, 404))
+        self.assertEqual(OrderItem.objects.get().quantity, 1)
+        self.assertFalse(CartItem.objects.exists())
