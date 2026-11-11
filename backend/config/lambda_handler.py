@@ -14,7 +14,7 @@ from config.wsgi import application
 
 api = make_lambda_handler(application)
 
-MANAGE_COMMANDS = {"migrate", "showmigrations", "check", "load_catalogue"}
+MANAGE_COMMANDS = {"migrate", "showmigrations", "check", "load_catalogue", "seed_demo"}
 
 
 def manage(event, context):

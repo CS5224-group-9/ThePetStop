@@ -316,6 +316,35 @@ The workspace loads the shop's products and merchant sub-orders. Fulfilment
 updates follow `paid → processing → shipped → delivered` and affect only the
 merchant's own sub-order; customer payment status remains `paid`.
 
+### Demo accounts (deployed site)
+
+Two fictional demo accounts: pet owner Jimmy (`jimmy@gmail.com`, dogs Kopi and
+Mochi) and merchant Mr James (`merchant@gmail.com`, Little Island Pets). The
+addresses are never mailed. Create each Cognito user with a verified email and
+a permanent password, in the matching group:
+
+```powershell
+$pool = "<user pool id, the end of the CognitoIssuer output>"
+aws cognito-idp admin-create-user --user-pool-id $pool --username jimmy@gmail.com `
+  --user-attributes Name=email,Value=jimmy@gmail.com Name=email_verified,Value=true Name=name,Value=Jimmy `
+  --message-action SUPPRESS --query "User.Attributes[?Name=='sub'].Value" --output text
+aws cognito-idp admin-set-user-password --user-pool-id $pool --username jimmy@gmail.com --password "<password>" --permanent
+aws cognito-idp admin-add-user-to-group --user-pool-id $pool --username jimmy@gmail.com --group-name owner
+```
+
+Repeat for `merchant@gmail.com` with group `merchant`. Then pass both printed
+`sub` values to `seed_demo` through `ManageFunction`:
+
+```powershell
+Set-Content payload.json '{"command": "seed_demo", "args": ["--owner-sub", "<jimmy sub>", "--merchant-sub", "<merchant sub>"]}'
+aws lambda invoke --function-name <ManageFunctionName> --payload fileb://payload.json result.json
+Get-Content result.json
+```
+
+The command creates or updates the Django users, so they work before their
+first sign-in, resets the demo pets' seeded rows, and refuses a shop that
+belongs to another user. It is safe to repeat.
+
 ### OneMap location search (local development)
 
 The facilities API contract is documented in [the facilities OpenAPI specification](../docs/openapi/facilities.yaml). It marks the implemented location search separately from the planned facility list and detail routes.
