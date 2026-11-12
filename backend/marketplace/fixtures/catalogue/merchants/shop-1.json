@@ -16,7 +16,7 @@
       "price_cents": 1915,
       "stock": 5,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "dry-food.jpg",
       "active": true
     },
     {
@@ -30,7 +30,7 @@
       "price_cents": 2290,
       "stock": 6,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "dry-food.jpg",
       "active": true
     },
     {
@@ -43,7 +43,7 @@
       "price_cents": 1640,
       "stock": 7,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "dry-food.jpg",
       "active": true
     },
     {
@@ -56,7 +56,7 @@
       "price_cents": 1515,
       "stock": 8,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "wet-food.jpg",
       "active": true
     },
     {
@@ -70,7 +70,7 @@
       "price_cents": 650,
       "stock": 9,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "training-treats.jpg",
       "active": true
     },
     {
@@ -84,7 +84,7 @@
       "price_cents": 965,
       "stock": 10,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "freeze-dried-treats.jpg",
       "active": true
     },
     {
@@ -97,7 +97,7 @@
       "price_cents": 940,
       "stock": 11,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "training-treats.jpg",
       "active": true
     },
     {
@@ -110,7 +110,7 @@
       "price_cents": 420,
       "stock": 12,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "training-treats.jpg",
       "active": true
     },
     {
@@ -124,7 +124,7 @@
       "price_cents": 1265,
       "stock": 13,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "oral-care.jpg",
       "active": true
     },
     {
@@ -138,7 +138,7 @@
       "price_cents": 1040,
       "stock": 14,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "pet-cleaners.jpg",
       "active": true
     },
     {
@@ -151,7 +151,7 @@
       "price_cents": 1315,
       "stock": 15,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "pet-cleaners.jpg",
       "active": true
     },
     {
@@ -164,7 +164,7 @@
       "price_cents": 965,
       "stock": 16,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "pet-cleaners.jpg",
       "active": true
     },
     {
@@ -178,7 +178,7 @@
       "price_cents": 700,
       "stock": 17,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "rope-toys.jpg",
       "active": true
     },
     {
@@ -192,7 +192,7 @@
       "price_cents": 1215,
       "stock": 18,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "enrichment-toys.jpg",
       "active": true
     },
     {
@@ -205,7 +205,7 @@
       "price_cents": 590,
       "stock": 19,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "plush-toys.jpg",
       "active": true
     },
     {
@@ -218,7 +218,7 @@
       "price_cents": 540,
       "stock": 20,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "chew-fetch-toys.jpg",
       "active": true
     },
     {
@@ -232,7 +232,7 @@
       "price_cents": 1515,
       "stock": 21,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "walking-gear.jpg",
       "active": true
     },
     {
@@ -246,7 +246,7 @@
       "price_cents": 990,
       "stock": 4,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "walking-gear.jpg",
       "active": true
     },
     {
@@ -259,7 +259,7 @@
       "price_cents": 925,
       "stock": 5,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "pet-home-accessories.jpg",
       "active": true
     },
     {
@@ -272,7 +272,7 @@
       "price_cents": 1300,
       "stock": 6,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "walking-gear.jpg",
       "active": true
     },
     {
@@ -286,7 +286,7 @@
       "price_cents": 790,
       "stock": 7,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "brushes-combs.jpg",
       "active": true
     },
     {
@@ -300,7 +300,7 @@
       "price_cents": 765,
       "stock": 8,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "grooming-tools.jpg",
       "active": true
     },
     {
@@ -313,7 +313,7 @@
       "price_cents": 1040,
       "stock": 9,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "drying-wipes.jpg",
       "active": true
     },
     {
@@ -326,7 +326,7 @@
       "price_cents": 815,
       "stock": 10,
       "product_type": "product",
-      "image_key": "cat-placeholder.jpg",
+      "image_key": "brushes-combs.jpg",
       "active": true
     }
   ]
