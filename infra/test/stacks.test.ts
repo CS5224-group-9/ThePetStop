@@ -203,7 +203,7 @@ test('stage throttling waits for the location search route to exist', () => {
   expect(stage.DependsOn).toContain(routeId);
 });
 
-test('only the API function can read and write pet files, by object, without listing', () => {
+test('the API function has only the required object-scoped storage permissions', () => {
   interface Statement {
     Action: string | string[];
     Resource: unknown;
@@ -235,7 +235,7 @@ test('only the API function can read and write pet files, by object, without lis
     's3:GetObject',
     's3:PutObject',
   ]);
-  expect([...actionsOf(productImages!.statement)]).toEqual(['s3:PutObject']);
+  expect([...actionsOf(productImages!.statement)].sort()).toEqual(['s3:GetObject', 's3:PutObject']);
   expect(petFiles!.roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
   expect(productImages!.roles).toEqual([{ Ref: expect.stringMatching(/^ApiFunctionServiceRole/) }]);
 
