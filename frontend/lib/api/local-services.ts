@@ -597,6 +597,9 @@ export const localServices: ReturnType<typeof createServices> = {
       Object.assign(p, { price_cents, stock });
     });
   },
+  async uploadProductImage() {
+    throw new Error("Product image uploads require API mode.");
+  },
   async deleteProduct(id) {
     write((s) => {
       required(s.products.find((p) => p.id === id && p.merchant_id === "m0"));

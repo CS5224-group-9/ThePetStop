@@ -112,7 +112,8 @@ export class ApiStack extends cdk.Stack {
     // remain private in S3 and are read through the CloudFront OAC origin.
     apiFunction.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ['s3:PutObject'],
+        // HeadObject requires GetObject; keep both permissions scoped to uploads.
+        actions: ['s3:PutObject', 's3:GetObject'],
         resources: [storage.productImagesBucket.arnForObjects('product-images/*')],
       }),
     );

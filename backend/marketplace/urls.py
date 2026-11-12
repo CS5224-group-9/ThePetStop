@@ -23,6 +23,16 @@ urlpatterns = [
         views.OwnedMerchantProductDetailView.as_view(),
         name="owned-merchant-product-detail",
     ),
+    path(
+        "merchant/products/<int:pk>/image-upload/",
+        views.OwnedMerchantProductImageUploadView.as_view(),
+        name="owned-merchant-product-image-upload",
+    ),
+    path(
+        "merchant/products/<int:pk>/image-upload/complete/",
+        views.OwnedMerchantProductImageCompleteView.as_view(),
+        name="owned-merchant-product-image-upload-complete",
+    ),
     path("categories/", views.CategoryListView.as_view(), name="category-list"),
     path("merchants/", views.MerchantListView.as_view(), name="merchant-list"),
     path(

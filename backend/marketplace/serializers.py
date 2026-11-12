@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.core.validators import RegexValidator
 from django.utils.text import slugify
@@ -90,10 +92,39 @@ class ProductDetailSerializer(ProductSerializer):
 
 class MerchantProductWriteSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all())
+    image_key = serializers.CharField(max_length=512, required=False, allow_blank=True)
 
     class Meta:
         model = Product
-        fields = ["name", "description", "category", "price_cents", "stock"]
+        fields = [
+            "name",
+            "description",
+            "category",
+            "price_cents",
+            "stock",
+            "image_key",
+        ]
+
+    def validate_image_key(self, value):
+        # Product keys can point at shared catalogue images or at images uploaded
+        # to this bucket. Do not accept external URLs or path traversal.
+        value = value.strip().lstrip("/")
+        if not value:
+            return ""
+        if value.startswith("product-images/"):
+            value = value.removeprefix("product-images/")
+        if (
+            len(value) > 512
+            or "/" in value
+            or value in {".", ".."}
+            or not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpg|jpeg|png|webp)", value, re.I
+            )
+        ):
+            raise serializers.ValidationError(
+                "Enter an image filename such as cat-placeholder.jpg."
+            )
+        return value
 
     def create(self, validated_data):
         merchant = self.context["merchant"]
@@ -106,6 +137,22 @@ class MerchantProductUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ["price_cents", "stock"]
+
+
+class ProductImageUploadSerializer(serializers.Serializer):
+    filename = serializers.CharField(max_length=255)
+    content_type = serializers.ChoiceField(
+        choices=["image/jpeg", "image/png", "image/webp"]
+    )
+    size_bytes = serializers.IntegerField(min_value=1, max_value=5 * 1024 * 1024)
+
+
+class ProductImageCompleteSerializer(serializers.Serializer):
+    image_key = serializers.CharField(max_length=512)
+    content_type = serializers.ChoiceField(
+        choices=["image/jpeg", "image/png", "image/webp"]
+    )
+    size_bytes = serializers.IntegerField(min_value=1, max_value=5 * 1024 * 1024)
 
 
 class ProductOfferSerializer(serializers.ModelSerializer):

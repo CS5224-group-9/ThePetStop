@@ -301,6 +301,63 @@ export function createServices(client: ReturnType<typeof createApiClient>) {
         merchants,
       );
     },
+    async uploadProductImage(productId: string, file: File): Promise<void> {
+      const extensions: Record<string, string[]> = {
+        "image/jpeg": [".jpg", ".jpeg"],
+        "image/png": [".png"],
+        "image/webp": [".webp"],
+      };
+      const validExtensions = extensions[file.type];
+      if (
+        !validExtensions ||
+        !validExtensions.some((extension) =>
+          file.name.toLowerCase().endsWith(extension),
+        )
+      )
+        throw new Error(
+          "Choose a JPEG, PNG or WebP image with a matching filename.",
+        );
+      if (!file.size || file.size > 5 * 1024 * 1024)
+        throw new Error("Product images must be 5 MB or smaller.");
+
+      const path = `merchant/products/${id(productId)}/image-upload/`;
+      const ticket = map.object(
+        await client.request(path, {
+          ...privateRequest,
+          method: "POST",
+          json: {
+            filename: file.name,
+            content_type: file.type,
+            size_bytes: file.size,
+          },
+        }),
+      );
+      if (
+        typeof ticket.upload_url !== "string" ||
+        typeof ticket.image_key !== "string"
+      )
+        throw new Error("The product image upload could not be prepared.");
+      try {
+        await transferPrivateFile(ticket.upload_url, {
+          method: "PUT",
+          headers: { "Content-Type": file.type },
+          body: file,
+        });
+        await client.request(`${path}complete/`, {
+          ...privateRequest,
+          method: "POST",
+          json: {
+            image_key: ticket.image_key,
+            content_type: file.type,
+            size_bytes: file.size,
+          },
+        });
+      } catch {
+        throw new Error(
+          "The product was added, but its image upload failed. Retry by adding the image again.",
+        );
+      }
+    },
     async updateProduct(productId: string, price_cents: number, stock: number) {
       await client.request(`merchant/products/${id(productId)}/`, {
         ...privateRequest,

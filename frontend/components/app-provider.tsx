@@ -97,7 +97,9 @@ type Context = {
     checkout: (input: ShippingInput, key: string) => Promise<string>;
     createProduct: (
       input: Parameters<typeof services.createProduct>[0],
+      image?: File,
     ) => Promise<void>;
+    uploadProductImage: (id: string, file: File) => Promise<void>;
     updateProduct: (id: string, price: number, stock: number) => Promise<void>;
     deleteProduct: (id: string) => Promise<void>;
     updateMerchantOrder: (id: string, status: string) => Promise<void>;
@@ -532,16 +534,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           await Promise.all([refresh("catalogue"), refresh("merchant")]);
         return order.id;
       }),
-    createProduct: (input) =>
+    createProduct: (input, image) =>
       perform("product:create", async (guard) => {
-        await services.createProduct(
+        const product = await services.createProduct(
           input,
           stateRef.current.categories,
           stateRef.current.merchants,
         );
         guard();
+        if (image) {
+          try {
+            await services.uploadProductImage(product.id, image);
+          } catch {
+            guard();
+            await Promise.all([refresh("merchant"), refresh("catalogue")]);
+            throw new Error(
+              "Product added, but its image was not saved. Use the image picker beside the product to retry.",
+            );
+          }
+        }
+        guard();
         await Promise.all([refresh("merchant"), refresh("catalogue")]);
         notify("Product added.");
+      }),
+    uploadProductImage: (id, file) =>
+      perform(`product-image:${id}`, async (guard) => {
+        await services.uploadProductImage(id, file);
+        guard();
+        await Promise.all([refresh("merchant"), refresh("catalogue")]);
+        notify("Product image updated.");
       }),
     updateProduct: (id, price, stock) =>
       perform(`product:${id}`, async (guard) => {
