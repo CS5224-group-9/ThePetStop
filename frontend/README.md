@@ -56,6 +56,10 @@ All writes wait for a server response. Basket writes send product IDs and quanti
 
 ## Pages and interactions
 
+Every page shares an advertising column in the outer right margin at viewport widths of 1440px and above. On narrower screens it appears below the main content, before the footer. `components/ad-rail.tsx` contains three independently editable fictional demo ads (brand, headline, description, icon, colour, link and link text); add or remove entries there to change the placements. Each ad is labelled **Advertisement · Demo** and opens an empty `about:blank` tab as its ad preview. Ad links show a native "Opens in a new tab" tooltip on hover and include the same notice in their accessible names. Ads use no third-party scripts, tracking, personal data or billing.
+
+The main marketplace also has one **Sponsored · Demo** product placement. Sponsorship is hardcoded in `lib/sponsorship.ts`: the local catalogue uses The Happy Tail's first food product; the seeded API catalogue uses Harbour Paws Supply's Balanced chicken dry dog food 2 kg. The placement uses current catalogue data and links to the normal product page. It hides when the product is unavailable, out of stock or excluded by filters, and is omitted on merchant storefronts. Normal result counts and price sorting stay unchanged. There are no database changes or real campaigns.
+
 Public: `/`, `/login/`, `/auth/callback/`, `/map/`, `/shop/`, `/shop/product/?id=product-id`, `/shop/store/?merchant=shop-slug`.
 
 Signed-in: `/pets/`, `/pets/new/`, `/pets/detail/?id=…`, `/pets/edit/?id=…`, `/pets/reminders/`, `/cart/`, `/checkout/`, `/orders/`, `/orders/detail/?id=…`.
