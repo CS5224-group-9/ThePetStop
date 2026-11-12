@@ -16,7 +16,7 @@
       "price_cents": 1765,
       "stock": 15,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -30,7 +30,7 @@
       "price_cents": 1685,
       "stock": 22,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -43,7 +43,7 @@
       "price_cents": 890,
       "stock": 29,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -56,7 +56,7 @@
       "price_cents": 2590,
       "stock": 13,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -70,7 +70,7 @@
       "price_cents": 445,
       "stock": 20,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -84,7 +84,7 @@
       "price_cents": 705,
       "stock": 27,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -97,7 +97,7 @@
       "price_cents": 640,
       "stock": 11,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -110,7 +110,7 @@
       "price_cents": 350,
       "stock": 18,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -124,7 +124,7 @@
       "price_cents": 1505,
       "stock": 25,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -138,7 +138,7 @@
       "price_cents": 565,
       "stock": 9,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -151,7 +151,7 @@
       "price_cents": 690,
       "stock": 16,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -164,7 +164,7 @@
       "price_cents": 1390,
       "stock": 23,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -178,7 +178,7 @@
       "price_cents": 565,
       "stock": 30,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -192,7 +192,7 @@
       "price_cents": 885,
       "stock": 14,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -205,7 +205,7 @@
       "price_cents": 450,
       "stock": 21,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -218,7 +218,7 @@
       "price_cents": 550,
       "stock": 28,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -232,7 +232,7 @@
       "price_cents": 585,
       "stock": 12,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -246,7 +246,7 @@
       "price_cents": 1205,
       "stock": 19,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -259,7 +259,7 @@
       "price_cents": 690,
       "stock": 26,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -272,7 +272,7 @@
       "price_cents": 1590,
       "stock": 10,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -286,7 +286,7 @@
       "price_cents": 465,
       "stock": 17,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -300,7 +300,7 @@
       "price_cents": 1165,
       "stock": 24,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -313,7 +313,7 @@
       "price_cents": 790,
       "stock": 8,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     },
     {
@@ -326,7 +326,7 @@
       "price_cents": 990,
       "stock": 15,
       "product_type": "product",
-      "image_key": "",
+      "image_key": "cat-placeholder.jpg",
       "active": true
     }
   ]
