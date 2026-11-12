@@ -62,7 +62,10 @@ class ProductSerializer(serializers.ModelSerializer):
         base_url = getattr(settings, "PRODUCT_IMAGES_BASE_URL", "").rstrip("/")
         if not base_url:
             return None
-        return f"{base_url}/{obj.image_key.lstrip('/')}"
+        key = obj.image_key.lstrip("/")
+        if not key.startswith("product-images/"):
+            key = f"product-images/{key}"
+        return f"{base_url}/{key}"
 
 
 class ProductDetailSerializer(ProductSerializer):
