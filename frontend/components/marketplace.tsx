@@ -267,18 +267,6 @@ export function Shop({ storefront = false }: { storefront?: boolean }) {
                 order totals are confirmed by the service.
               </p>
             </div>
-            {!storefront && (
-              <aside
-                className="ad-placeholder"
-                aria-label="Advertisement placeholder"
-              >
-                <Badge tone="amber">Advertisement · Demo</Badge>
-                <h3>A space for pet brands</h3>
-                <p>
-                  Future advertising placement. No live advertisement is served.
-                </p>
-              </aside>
-            )}
           </aside>
           <section className="catalogue-results" aria-label="Product results">
             <div className="directory-toolbar">

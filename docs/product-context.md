@@ -55,7 +55,7 @@ Purpose: discover and compare pet supplies across participating retailers, and b
 - Checkout from our site with **simulated payment**: no real money moves. One order is split into one sub-order per merchant.
 - Order history in one place, with per-merchant status.
 - Basic merchant management: merchants edit their products, prices, stock and images, and move their sub-orders through Processing → Shipped → Delivered.
-- Advertising demonstration (approved 2026-11-13): the marketplace has a labelled ad placeholder and one hardcoded sponsored product placement. It uses an existing available catalogue product, respects filters and leaves normal sorting unchanged. No database sponsorship fields, paid campaigns, billing or tracking.
+- Advertising demonstration (approved 2026-11-13): all pages share an outer right advertising column with multiple labelled fictional ads, moved below the main content on narrower screens. The marketplace also has one hardcoded sponsored product placement. It uses an existing available catalogue product, respects filters and leaves normal sorting unchanged. No database sponsorship fields, paid campaigns, billing or tracking.
 
 Seed data, required by the brief: **6 fictional shops**, each with **20–30 products**, across **6 categories**. Shops overlap on enough products for price comparison to be visible. See [data-model.md](data-model.md#seed-catalogue).
 

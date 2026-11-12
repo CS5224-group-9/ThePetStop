@@ -7,6 +7,7 @@ import { useApp } from "./app-provider";
 import { Icon } from "./ui";
 import { nextPath } from "@/lib/format";
 import { useDevAuthEnabled } from "@/lib/auth/dev";
+import { AdRail } from "./ad-rail";
 
 const navigation = [
   { href: "/", label: "Overview", mobile: "Home", icon: "grid" },
@@ -120,9 +121,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <div className="workspace">
-        <main id="main-content" tabIndex={-1}>
-          {children}
-        </main>
+        <div className="workspace-content">
+          <main id="main-content" tabIndex={-1}>
+            {children}
+          </main>
+          <AdRail />
+        </div>
         <footer>
           <div className="footer-brand">
             <Icon name="medical" size={17} />
