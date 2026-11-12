@@ -56,6 +56,8 @@ export type NewProductInput = {
   category: string;
   price_cents: number;
   stock: number;
+  /** Existing filename in the ProductImages bucket, e.g. cat-placeholder.jpg. */
+  image_key?: string;
 };
 export type Reminder = {
   id: string;

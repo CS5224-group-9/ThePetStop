@@ -2441,6 +2441,18 @@ footer a:hover {
 .merchant-create-description {
   grid-column: 1 / -1;
 }
+.merchant-image-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.merchant-image-picker input {
+  max-width: 190px;
+  font-size: 0.75rem;
+}
 .merchant-table-head,
 .merchant-row {
   display: grid;

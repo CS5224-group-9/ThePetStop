@@ -4,6 +4,7 @@ import { useApp } from "./app-provider";
 import { Badge, Empty, Icon, PageHeading } from "./ui";
 import { FormError } from "./resource-state";
 import { money } from "@/lib/format";
+import { localUI } from "@/lib/data-source";
 export function Merchant() {
   const { state, actions, pending } = useApp();
   const [tab, setTab] = useState("Catalogue");
@@ -51,15 +52,22 @@ export function Merchant() {
               if (creating) return;
               const form = e.currentTarget;
               const d = new FormData(form);
+              const selectedImage = d.get("image_file");
               setError("");
               try {
-                await actions.createProduct({
-                  name: String(d.get("name")).trim(),
-                  description: String(d.get("description")).trim(),
-                  category: String(d.get("category")),
-                  price_cents: Math.round(Number(d.get("price")) * 100),
-                  stock: Number(d.get("stock")),
-                });
+                await actions.createProduct(
+                  {
+                    name: String(d.get("name")).trim(),
+                    description: String(d.get("description")).trim(),
+                    category: String(d.get("category")),
+                    price_cents: Math.round(Number(d.get("price")) * 100),
+                    stock: Number(d.get("stock")),
+                    image_key: String(d.get("image_key") || "").trim(),
+                  },
+                  selectedImage instanceof File && selectedImage.size
+                    ? selectedImage
+                    : undefined,
+                );
                 form.reset();
               } catch (cause) {
                 setError(
@@ -126,6 +134,36 @@ export function Merchant() {
                   disabled={creating}
                 />
               </label>
+              <label>
+                Product image
+                <input
+                  name="image_file"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={creating || localUI}
+                  aria-describedby="product-image-help"
+                />
+                <small id="product-image-help">
+                  {localUI
+                    ? "Image uploads are available in API mode."
+                    : "JPEG, PNG or WebP; up to 5 MB."}
+                </small>
+              </label>
+              {!localUI && (
+                <label>
+                  Existing image filename
+                  <input
+                    name="image_key"
+                    placeholder="cat-placeholder.jpg"
+                    maxLength={512}
+                    autoComplete="off"
+                    disabled={creating}
+                  />
+                  <small>
+                    Use an image already in the ProductImages bucket.
+                  </small>
+                </label>
+              )}
             </div>
             <div className="form-footer">
               <button
@@ -173,6 +211,34 @@ export function Merchant() {
                   <div>
                     <h3>{p.name}</h3>
                     <p>{p.category}</p>
+                    {!localUI && (
+                      <label className="merchant-image-picker">
+                        <span>
+                          {p.image_url ? "Replace image" : "Add image"}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          aria-label={`Upload image for ${p.name}`}
+                          disabled={pending.includes(`product-image:${p.id}`)}
+                          onChange={async (event) => {
+                            const file = event.currentTarget.files?.[0];
+                            event.currentTarget.value = "";
+                            if (!file) return;
+                            setError("");
+                            try {
+                              await actions.uploadProductImage(p.id, file);
+                            } catch (cause) {
+                              setError(
+                                cause instanceof Error
+                                  ? cause.message
+                                  : "Unable to upload this product image.",
+                              );
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
                   </div>
                   <label>
                     <span className="sr-only">Price for {p.name}</span>

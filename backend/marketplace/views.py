@@ -9,7 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from . import checkout
+from . import checkout, image_uploads
 from .models import CartItem, Category, Merchant, MerchantOrder, Order, Product
 from .permissions import IsMerchant
 from .serializers import (
@@ -24,6 +24,8 @@ from .serializers import (
     OrderSerializer,
     OwnedMerchantOrderSerializer,
     ProductDetailSerializer,
+    ProductImageCompleteSerializer,
+    ProductImageUploadSerializer,
     ProductSerializer,
     ShippingSerializer,
     cart_payload,
@@ -176,6 +178,56 @@ class OwnedMerchantProductDetailView(generics.RetrieveUpdateDestroyAPIView):
     def perform_destroy(self, instance):
         instance.active = False
         instance.save(update_fields=["active"])
+
+
+class OwnedMerchantProductImageUploadView(APIView):
+    permission_classes = [IsAuthenticated, IsMerchant]
+
+    def post(self, request, pk):
+        product = get_object_or_404(owned_products(request.user), pk=pk)
+        serializer = ProductImageUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        content_type = serializer.validated_data["content_type"]
+        image_uploads.validate_upload(
+            content_type, serializer.validated_data["size_bytes"]
+        )
+        key = image_uploads.image_key(product.merchant_id, product.pk, content_type)
+        ticket = image_uploads.upload_ticket(
+            key, content_type, serializer.validated_data["size_bytes"]
+        )
+        return Response(
+            {
+                "upload_url": ticket.url,
+                "upload_headers": {"Content-Type": content_type},
+                "image_key": ticket.key,
+            }
+        )
+
+
+class OwnedMerchantProductImageCompleteView(APIView):
+    permission_classes = [IsAuthenticated, IsMerchant]
+
+    def post(self, request, pk):
+        product = get_object_or_404(owned_products(request.user), pk=pk)
+        serializer = ProductImageCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        key = image_uploads.validate_owned_key(
+            values["image_key"], product.merchant_id, product.pk
+        )
+        if not image_uploads.verify_upload(
+            key, values["content_type"], values["size_bytes"]
+        ):
+            raise ValidationError(
+                {
+                    "image": [
+                        "The uploaded image is missing or does not match its details."
+                    ]
+                }
+            )
+        product.image_key = key
+        product.save(update_fields=["image_key", "updated_at"])
+        return Response(ProductSerializer(product).data)
 
 
 # Cart, checkout and orders: private to the signed-in user (the default permission)
