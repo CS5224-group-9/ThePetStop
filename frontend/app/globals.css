@@ -1888,6 +1888,53 @@ footer a:hover {
 .catalogue-results .search-field {
   background: var(--surface);
 }
+.ad-placeholder {
+  margin-top: 22px;
+  padding: 17px;
+  border: 1px dashed var(--control-line);
+  border-radius: var(--radius);
+  background: var(--group);
+}
+.ad-placeholder h3 {
+  margin-top: 12px;
+  font-size: 0.875rem;
+}
+.ad-placeholder p,
+.sponsored-copy p {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.sponsored-listing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 20px;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.sponsored-art {
+  flex: 0 1 180px;
+  min-width: 0;
+}
+.sponsored-art .product-art {
+  height: 180px;
+  border-radius: var(--radius);
+}
+.sponsored-copy {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sponsored-copy h2 {
+  margin-top: 12px;
+  font-size: 1.125rem;
+}
+.sponsored-copy .sponsored-disclosure {
+  font-size: 0.75rem;
+}
 .product-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

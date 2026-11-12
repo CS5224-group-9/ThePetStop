@@ -55,6 +55,7 @@ Purpose: discover and compare pet supplies across participating retailers, and b
 - Checkout from our site with **simulated payment**: no real money moves. One order is split into one sub-order per merchant.
 - Order history in one place, with per-merchant status.
 - Basic merchant management: merchants edit their products, prices, stock and images, and move their sub-orders through Processing → Shipped → Delivered.
+- Advertising demonstration (approved 2026-11-13): the marketplace has a labelled ad placeholder and one hardcoded sponsored product placement. It uses an existing available catalogue product, respects filters and leaves normal sorting unchanged. No database sponsorship fields, paid campaigns, billing or tracking.
 
 Seed data, required by the brief: **6 fictional shops**, each with **20–30 products**, across **6 categories**. Shops overlap on enough products for price comparison to be visible. See [data-model.md](data-model.md#seed-catalogue).
 
@@ -73,15 +74,15 @@ How each is met is in [architecture.md](architecture.md).
 
 Do not build these without an explicit team decision. Log ideas as future work for the final report.
 
-| Item | Why it is out |
-| --- | --- |
-| Real payments (PayNow), tokenisation, refunds | The brief asks for a simulated checkout |
-| Ledger, commission split, seller payouts, GST invoices, reconciliation | Revenue features; the report keeps them out of the prototype |
-| Advertising and sponsored listings | Revenue feature; out of the prototype |
-| Appointment booking for vets or groomers | Not in the brief |
-| Email, SMS and push notifications | Not in the brief; reminders are shown in the app only |
-| Pet parks and pet-friendly venues on the map | The brief covers vets and pet shops only |
-| Merchant self-signup and onboarding | Merchant accounts are created by the team for the six seeded shops |
+| Item                                                                   | Why it is out                                                       |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Real payments (PayNow), tokenisation, refunds                          | The brief asks for a simulated checkout                             |
+| Ledger, commission split, seller payouts, GST invoices, reconciliation | Revenue features; the report keeps them out of the prototype        |
+| Live advertising and managed sponsored campaigns                       | Revenue feature; only a labelled frontend demonstration is included |
+| Appointment booking for vets or groomers                               | Not in the brief                                                    |
+| Email, SMS and push notifications                                      | Not in the brief; reminders are shown in the app only               |
+| Pet parks and pet-friendly venues on the map                           | The brief covers vets and pet shops only                            |
+| Merchant self-signup and onboarding                                    | Merchant accounts are created by the team for the six seeded shops  |
 
 ## What the evaluation needs from the code
 

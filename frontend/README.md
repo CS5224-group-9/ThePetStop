@@ -56,6 +56,8 @@ All writes wait for a server response. Basket writes send product IDs and quanti
 
 ## Pages and interactions
 
+The main marketplace has an advertisement placeholder and one **Sponsored · Demo** product placement. Sponsorship is hardcoded in `lib/sponsorship.ts`: the local catalogue uses The Happy Tail's first food product; the seeded API catalogue uses Harbour Paws Supply's Balanced chicken dry dog food 2 kg. The placement uses current catalogue data and links to the normal product page. It hides when the product is unavailable, out of stock or excluded by filters, and is omitted on merchant storefronts. Normal result counts and price sorting stay unchanged. There are no database changes, real campaigns, billing or ad tracking.
+
 Public: `/`, `/login/`, `/auth/callback/`, `/map/`, `/shop/`, `/shop/product/?id=product-id`, `/shop/store/?merchant=shop-slug`.
 
 Signed-in: `/pets/`, `/pets/new/`, `/pets/detail/?id=…`, `/pets/edit/?id=…`, `/pets/reminders/`, `/cart/`, `/checkout/`, `/orders/`, `/orders/detail/?id=…`.

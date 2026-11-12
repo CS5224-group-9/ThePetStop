@@ -11,6 +11,7 @@ import { money, displayDate, safeExternalUrl } from "@/lib/format";
 import { services } from "@/lib/api/services";
 import { useResource } from "@/lib/api/use-resource";
 import type { Product } from "@/lib/api/types";
+import { sponsoredProduct } from "@/lib/sponsorship";
 export function ProductArt({ product }: { product: Product }) {
   const source = safeExternalUrl(product.image_url);
   if (localUI)
@@ -118,6 +119,7 @@ export function Shop({ storefront = false }: { storefront?: boolean }) {
           ? b.price_cents - a.price_cents
           : 0,
     );
+  const sponsored = storefront ? undefined : sponsoredProduct(filtered);
   if (storefront && state.merchants.length && (!merchantSlug || !merchant))
     return (
       <Empty title="Shop not found">
@@ -265,6 +267,18 @@ export function Shop({ storefront = false }: { storefront?: boolean }) {
                 order totals are confirmed by the service.
               </p>
             </div>
+            {!storefront && (
+              <aside
+                className="ad-placeholder"
+                aria-label="Advertisement placeholder"
+              >
+                <Badge tone="amber">Advertisement · Demo</Badge>
+                <h3>A space for pet brands</h3>
+                <p>
+                  Future advertising placement. No live advertisement is served.
+                </p>
+              </aside>
+            )}
           </aside>
           <section className="catalogue-results" aria-label="Product results">
             <div className="directory-toolbar">
@@ -296,6 +310,44 @@ export function Shop({ storefront = false }: { storefront?: boolean }) {
                 <option value="high">Price: high to low</option>
               </select>
             </div>
+            {sponsored && (
+              <section
+                className="sponsored-listing"
+                aria-label="Sponsored product"
+              >
+                <Link
+                  className="sponsored-art"
+                  href={`/shop/product/?id=${encodeURIComponent(sponsored.id)}`}
+                  aria-label={`View sponsored product: ${sponsored.name}`}
+                >
+                  <ProductArt product={sponsored} />
+                </Link>
+                <div className="sponsored-copy">
+                  <Badge tone="amber">Sponsored · Demo</Badge>
+                  <h2>
+                    <Link
+                      href={`/shop/product/?id=${encodeURIComponent(sponsored.id)}`}
+                    >
+                      {sponsored.name}
+                    </Link>
+                  </h2>
+                  <p>
+                    {sponsored.merchant} · {sponsored.size}
+                  </p>
+                  <strong>{money(sponsored.price_cents)}</strong>
+                  <p className="sponsored-disclosure">
+                    Sample sponsored placement. No payment or endorsement is
+                    implied.
+                  </p>
+                  <Link
+                    className="text-link"
+                    href={`/shop/product/?id=${encodeURIComponent(sponsored.id)}`}
+                  >
+                    View product <Icon name="arrow" size={14} />
+                  </Link>
+                </div>
+              </section>
+            )}
             <div className="results-header">
               <strong aria-live="polite">{filtered.length} products</strong>
               <span>{state.merchants.length} merchants</span>

@@ -12,6 +12,31 @@ import {
   seedLocalState,
 } from "../lib/api/local-services.ts";
 import type { Facility } from "../lib/api/types.ts";
+import { sponsoredProduct } from "../lib/sponsorship.ts";
+
+test("demo sponsorship selects only its fixed available product without reordering results", () => {
+  const products = seedLocalState().products;
+  const sponsor = products.find((p) => p.id === "p-0-0-0")!;
+  const others = products.filter((p) => p.id !== sponsor.id);
+  const sorted = [...others, sponsor];
+  assert.equal(sponsoredProduct(sorted), sponsor);
+  assert.equal(sorted.at(-1), sponsor);
+  assert.equal(sponsoredProduct(others), undefined);
+  assert.equal(sponsoredProduct([]), undefined);
+  assert.equal(sponsoredProduct([{ ...sponsor, stock: 0 }]), undefined);
+  const apiSponsor = {
+    ...sponsor,
+    id: "123",
+    merchant_id: "456",
+    merchant: "Harbour Paws Supply",
+    name: "Balanced chicken dry dog food 2 kg",
+  };
+  assert.equal(sponsoredProduct([apiSponsor]), apiSponsor);
+  assert.equal(
+    sponsoredProduct([{ ...apiSponsor, merchant: "Other shop" }]),
+    undefined,
+  );
+});
 
 const facilityFixtures: Facility[] = [
   {
