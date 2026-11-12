@@ -1865,6 +1865,8 @@ footer a:hover {
 .catalogue-filters {
   position: sticky;
   top: 108px;
+  max-height: calc(100dvh - 124px);
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -2964,6 +2966,7 @@ footer a:hover {
   }
   .catalogue-filters {
     top: 150px;
+    max-height: calc(100dvh - 166px);
     padding: 14px;
   }
   .catalogue-filters .section-heading {
@@ -3744,6 +3747,8 @@ footer a:hover {
   }
   .catalogue-filters {
     position: static;
+    max-height: none;
+    overflow: visible;
     padding: 16px;
   }
   .catalogue-filters .section-heading {
